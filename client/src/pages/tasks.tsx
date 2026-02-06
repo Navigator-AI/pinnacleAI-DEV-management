@@ -1,20 +1,36 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Filter, LayoutGrid, List, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, Search, Filter, LayoutGrid, List, Calendar as CalendarIcon, CheckSquare, Clock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { TaskList } from "@/components/task-list";
 import { KanbanBoard } from "@/components/kanban-board";
-import type { Task } from "@shared/schema";
+import { CreateTaskDialog } from "@/components/create-task-dialog";
+import { useToast } from "@/hooks/use-toast";
+import type { Task, TaskWithDetails } from "@shared/schema";
 
-export default function TasksPage() {
+interface TasksPageProps {
+  userRole?: string;
+}
+
+export default function TasksPage({ userRole }: TasksPageProps = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState("list");
+  const { toast } = useToast();
 
-  const { data: tasks, isLoading } = useQuery<Task[]>({
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
+
+  const { data: tasks, isLoading, error } = useQuery<TaskWithDetails[]>({
     queryKey: ["/api/tasks"],
+    enabled: Boolean(user?.id),
   });
+
+  console.log('Tasks query result:', { tasks, isLoading, error, userExists: Boolean(user?.id) });
 
   const filteredTasks =
     tasks?.filter((t) =>
@@ -27,10 +43,102 @@ export default function TasksPage() {
     inProgress: tasks?.filter((t) => t.status === "in-progress").length || 0,
     review: tasks?.filter((t) => t.status === "review").length || 0,
     done: tasks?.filter((t) => t.status === "done").length || 0,
+    overdue: tasks?.filter((t) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "done").length || 0,
   };
 
+  // User-specific view for non-admin users
+  if (!isAdmin) {
+    return (
+      <div className="h-full overflow-auto">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
+          <div className="flex flex-col gap-4">
+            <div>
+              <h1 className="text-xl font-semibold">My Tasks</h1>
+              <p className="text-sm text-muted-foreground">
+                Track your assigned tasks and daily progress
+              </p>
+            </div>
+
+            {/* User Task Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="h-4 w-4 text-blue-500" />
+                    <div>
+                      <p className="text-sm font-medium">{taskStats.total}</p>
+                      <p className="text-xs text-muted-foreground">Total Tasks</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-orange-500" />
+                    <div>
+                      <p className="text-sm font-medium">{taskStats.inProgress}</p>
+                      <p className="text-xs text-muted-foreground">In Progress</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <div>
+                      <p className="text-sm font-medium">{taskStats.overdue}</p>
+                      <p className="text-xs text-muted-foreground">Overdue</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="h-4 w-4 text-green-500" />
+                    <div>
+                      <p className="text-sm font-medium">{taskStats.done}</p>
+                      <p className="text-xs text-muted-foreground">Completed</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Search */}
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search your tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          <TaskList 
+            tasks={filteredTasks} 
+            isLoading={isLoading} 
+            showUserView={true} 
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            hideSearch={true}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Admin view - full task management
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -40,10 +148,7 @@ export default function TasksPage() {
               Manage all tasks across your projects
             </p>
           </div>
-          <Button data-testid="button-add-task-global">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Task
-          </Button>
+          {isAdmin && <CreateTaskDialog />}
         </div>
 
         {/* Stats */}
@@ -87,7 +192,12 @@ export default function TasksPage() {
               data-testid="input-search-tasks-global"
             />
           </div>
-          <Button variant="outline" size="sm" data-testid="button-filter-tasks-global">
+          <Button variant="outline" size="sm" data-testid="button-filter-tasks-global" onClick={() => {
+            toast({ 
+              title: "Filters", 
+              description: "Advanced filtering options coming soon" 
+            });
+          }}>
             <Filter className="h-4 w-4 mr-2" />
             Filters
           </Button>
@@ -126,10 +236,22 @@ export default function TasksPage() {
       {/* Content */}
       <div className="p-6">
         {activeView === "list" && (
-          <TaskList tasks={filteredTasks} isLoading={isLoading} />
+          <TaskList 
+            tasks={filteredTasks} 
+            isLoading={isLoading} 
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            hideSearch={true}
+          />
         )}
         {activeView === "kanban" && (
-          <KanbanBoard tasks={filteredTasks} isLoading={isLoading} />
+          <KanbanBoard 
+            tasks={filteredTasks} 
+            isLoading={isLoading} 
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            hideSearch={true}
+          />
         )}
         {activeView === "calendar" && (
           <div className="flex flex-col items-center justify-center py-16 border border-dashed border-border rounded-md">

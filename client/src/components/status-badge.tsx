@@ -1,9 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { ProjectStatus, PriorityType, TaskStatus } from "@shared/schema";
 
-type StatusType = "on-track" | "at-risk" | "overdue" | "completed" | "in-progress";
-type PriorityType = "low" | "medium" | "high" | "critical";
-type TaskStatus = "todo" | "in-progress" | "review" | "done";
+type StatusType = ProjectStatus | "in-progress";
 
 interface StatusBadgeProps {
   status: StatusType | TaskStatus;
@@ -71,6 +70,22 @@ const priorityConfig: Record<PriorityType, { label: string; className: string }>
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const config = statusConfig[status];
+  
+  if (!config) {
+    return (
+      <Badge
+        variant="secondary"
+        className={cn(
+          "font-medium no-default-hover-elevate no-default-active-elevate",
+          "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+          className
+        )}
+      >
+        {status || 'Unknown'}
+      </Badge>
+    );
+  }
+  
   return (
     <Badge
       variant="secondary"
@@ -87,6 +102,22 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 
 export function PriorityBadge({ priority, className }: PriorityBadgeProps) {
   const config = priorityConfig[priority];
+  
+  if (!config) {
+    return (
+      <Badge
+        variant="secondary"
+        className={cn(
+          "font-medium no-default-hover-elevate no-default-active-elevate",
+          "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+          className
+        )}
+      >
+        {priority || 'Unknown'}
+      </Badge>
+    );
+  }
+  
   return (
     <Badge
       variant="secondary"

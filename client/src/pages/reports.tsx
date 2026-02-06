@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 import {
   BarChart3,
   TrendingUp,
@@ -22,22 +23,6 @@ const reportTypes = [
     bgColor: "bg-emerald-100 dark:bg-emerald-900/30",
   },
   {
-    id: "planned-actual",
-    title: "Planned vs Actual",
-    description: "Compare planned timelines with actual progress",
-    icon: BarChart3,
-    color: "text-blue-500",
-    bgColor: "bg-blue-100 dark:bg-blue-900/30",
-  },
-  {
-    id: "time-utilization",
-    title: "Time Utilization",
-    description: "Analyze how time is spent across projects",
-    icon: Clock,
-    color: "text-purple-500",
-    bgColor: "bg-purple-100 dark:bg-purple-900/30",
-  },
-  {
     id: "workload-distribution",
     title: "Workload Distribution",
     description: "View team member workload balance",
@@ -48,8 +33,41 @@ const reportTypes = [
 ];
 
 export default function ReportsPage() {
+  const { toast } = useToast();
+
+  const handleExportReport = () => {
+    toast({
+      title: "Export Report",
+      description: "Report export functionality coming soon",
+    });
+  };
+
+  const handleCreateCustomReport = () => {
+    toast({
+      title: "Custom Report",
+      description: "Custom report builder coming soon",
+    });
+  };
+
+  const handleViewReport = (reportTitle: string) => {
+    // Create a simple report view
+    const reportWindow = window.open('', '_blank', 'width=800,height=600');
+    if (reportWindow) {
+      reportWindow.document.write(`
+        <html>
+          <head><title>${reportTitle} Report</title></head>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h1>${reportTitle}</h1>
+            <p>Report data will be displayed here.</p>
+            <p>This is a placeholder for the ${reportTitle} report.</p>
+          </body>
+        </html>
+      `);
+      reportWindow.document.close();
+    }
+  };
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -60,11 +78,11 @@ export default function ReportsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" data-testid="button-export-report">
+            <Button variant="outline" data-testid="button-export-report" onClick={handleExportReport}>
               <Download className="h-4 w-4 mr-2" />
               Export
             </Button>
-            <Button data-testid="button-create-report">
+            <Button data-testid="button-create-report" onClick={handleCreateCustomReport}>
               <Plus className="h-4 w-4 mr-2" />
               Custom Report
             </Button>
@@ -74,17 +92,14 @@ export default function ReportsPage() {
 
       <div className="p-6 space-y-6">
         {/* Quick Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Projects Health</p>
-                  <p className="text-2xl font-bold">87%</p>
-                  <div className="flex items-center gap-1 text-xs text-emerald-500">
-                    <ArrowUpRight className="h-3 w-3" />
-                    +5% from last month
-                  </div>
+                  <p className="text-2xl font-bold">0%</p>
+                  <p className="text-xs text-muted-foreground">No projects available</p>
                 </div>
                 <div className="rounded-md bg-primary/10 p-2">
                   <TrendingUp className="h-5 w-5 text-primary" />
@@ -98,11 +113,8 @@ export default function ReportsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Task Completion</p>
-                  <p className="text-2xl font-bold">156</p>
-                  <div className="flex items-center gap-1 text-xs text-emerald-500">
-                    <ArrowUpRight className="h-3 w-3" />
-                    +23 this week
-                  </div>
+                  <p className="text-2xl font-bold">0</p>
+                  <p className="text-xs text-muted-foreground">No tasks completed</p>
                 </div>
                 <div className="rounded-md bg-emerald-100 dark:bg-emerald-900/30 p-2">
                   <BarChart3 className="h-5 w-5 text-emerald-500" />
@@ -115,30 +127,9 @@ export default function ReportsPage() {
             <CardContent className="p-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Hours Logged</p>
-                  <p className="text-2xl font-bold">342h</p>
-                  <div className="flex items-center gap-1 text-xs text-amber-500">
-                    <ArrowDownRight className="h-3 w-3" />
-                    -8% from last week
-                  </div>
-                </div>
-                <div className="rounded-md bg-purple-100 dark:bg-purple-900/30 p-2">
-                  <Clock className="h-5 w-5 text-purple-500" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
                   <p className="text-sm text-muted-foreground">Team Efficiency</p>
-                  <p className="text-2xl font-bold">92%</p>
-                  <div className="flex items-center gap-1 text-xs text-emerald-500">
-                    <ArrowUpRight className="h-3 w-3" />
-                    +3% improvement
-                  </div>
+                  <p className="text-2xl font-bold">0%</p>
+                  <p className="text-xs text-muted-foreground">No data available</p>
                 </div>
                 <div className="rounded-md bg-amber-100 dark:bg-amber-900/30 p-2">
                   <Users className="h-5 w-5 text-amber-500" />
@@ -157,6 +148,7 @@ export default function ReportsPage() {
                 key={report.id}
                 className="hover-elevate cursor-pointer"
                 data-testid={`card-report-${report.id}`}
+                onClick={() => handleViewReport(report.title)}
               >
                 <CardContent className="p-5">
                   <div className="flex items-start gap-4">
@@ -169,7 +161,10 @@ export default function ReportsPage() {
                         {report.description}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={(e) => {
+                      e.stopPropagation();
+                      handleViewReport(report.title);
+                    }}>
                       View
                     </Button>
                   </div>

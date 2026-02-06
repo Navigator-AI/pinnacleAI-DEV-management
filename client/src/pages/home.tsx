@@ -9,15 +9,18 @@ import {
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
+  MessageSquare,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { ProgressRing } from "@/components/progress-ring";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DashboardStats, Project, Activity, TeamMember } from "@shared/schema";
+import { TaskUpdateDialog } from "@/components/task-update-dialog";
+import type { DashboardStats, Project, Activity, TeamMember, TaskWithDetails } from "@shared/schema";
 
 function StatCard({
   title,
@@ -65,7 +68,7 @@ function StatCard({
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project }: { project: any }) {
   return (
     <Card className="hover-elevate">
       <CardContent className="p-4">
@@ -84,25 +87,25 @@ function ProjectCard({ project }: { project: Project }) {
               <Avatar className="h-6 w-6">
                 <AvatarImage src={project.ownerAvatar} />
                 <AvatarFallback className="text-xs">
-                  {project.ownerName.charAt(0)}
+                  {project.ownerName?.charAt(0) || 'U'}
                 </AvatarFallback>
               </Avatar>
               <span className="text-xs text-muted-foreground">
-                {project.ownerName}
+                {project.ownerName || 'Unknown'}
               </span>
               <span className="text-xs text-muted-foreground">
-                Due {new Date(project.endDate).toLocaleDateString()}
+                Due {project.endDate ? new Date(project.endDate).toLocaleDateString() : 'No date'}
               </span>
             </div>
           </div>
-          <ProgressRing progress={project.progress} size={48} />
+          <ProgressRing progress={project.progress || 0} size={48} />
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function ActivityItem({ activity }: { activity: Activity }) {
+function ActivityItem({ activity }: { activity: any }) {
   const getActionColor = () => {
     switch (activity.targetType) {
       case "task":
@@ -124,24 +127,24 @@ function ActivityItem({ activity }: { activity: Activity }) {
     <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
       <Avatar className="h-8 w-8">
         <AvatarImage src={activity.userAvatar} />
-        <AvatarFallback className="text-xs">{activity.userName.charAt(0)}</AvatarFallback>
+        <AvatarFallback className="text-xs">{activity.userName?.charAt(0) || 'U'}</AvatarFallback>
       </Avatar>
       <div className="flex-1 min-w-0">
         <p className="text-sm">
-          <span className="font-medium">{activity.userName}</span>{" "}
-          <span className="text-muted-foreground">{activity.action}</span>{" "}
-          <span className={getActionColor()}>{activity.target}</span>
+          <span className="font-medium">{activity.userName || 'Unknown'}</span>{" "}
+          <span className="text-muted-foreground">{activity.action || 'performed an action'}</span>{" "}
+          <span className={getActionColor()}>{activity.target || 'something'}</span>
         </p>
         <span className="text-xs text-muted-foreground">
-          {new Date(activity.createdAt).toLocaleString()}
+          {activity.createdAt ? new Date(activity.createdAt).toLocaleString() : 'Recently'}
         </span>
       </div>
     </div>
   );
 }
 
-function TeamMemberCard({ member }: { member: TeamMember }) {
-  const statusColor = {
+function TeamMemberCard({ member }: { member: any }) {
+  const statusColor: { [key: string]: string } = {
     online: "bg-emerald-500",
     away: "bg-amber-500",
     busy: "bg-red-500",
@@ -153,56 +156,126 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
       <div className="relative">
         <Avatar className="h-10 w-10">
           <AvatarImage src={member.avatar} />
-          <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+          <AvatarFallback>{member.name?.charAt(0) || 'U'}</AvatarFallback>
         </Avatar>
         <span
-          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card ${statusColor[member.status]}`}
+          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card ${statusColor[member.status] || statusColor.offline}`}
         />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{member.name}</p>
-        <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
+        <p className="text-sm font-medium truncate">{member.name || 'Unknown'}</p>
+        <p className="text-xs text-muted-foreground capitalize">{member.role || 'member'}</p>
       </div>
       <div className="w-16">
-        <Progress value={member.workload} className="h-1.5" />
-        <span className="text-xs text-muted-foreground">{member.workload}%</span>
+        <Progress value={member.workload || 0} className="h-1.5" />
+        <span className="text-xs text-muted-foreground">{member.workload || 0}%</span>
       </div>
     </div>
   );
 }
 
 export default function HomePage() {
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
+    enabled: Boolean(user?.id),
   });
 
-  const { data: projects, isLoading: projectsLoading } = useQuery<Project[]>({
+  const { data: projects, isLoading: projectsLoading } = useQuery<any[]>({
     queryKey: ["/api/projects"],
+    enabled: Boolean(user?.id),
   });
 
-  const { data: activities, isLoading: activitiesLoading } = useQuery<Activity[]>({
+  const { data: activities, isLoading: activitiesLoading } = useQuery<any[]>({
     queryKey: ["/api/activities"],
+    enabled: Boolean(user?.id),
   });
 
-  const { data: teamMembers, isLoading: teamLoading } = useQuery<TeamMember[]>({
-    queryKey: ["/api/team"],
+  const { data: tasks, isLoading: tasksLoading } = useQuery<TaskWithDetails[]>({
+    queryKey: ["/api/tasks"],
+    enabled: Boolean(user?.id),
   });
+
+  const { data: teamMembers, isLoading: teamLoading } = useQuery<any[]>({
+    queryKey: ["/api/team"],
+    enabled: Boolean(user?.id),
+  });
+
+  const tasksNeedingUpdate = tasks?.filter(task => {
+    if (task.status === 'done') return false;
+    if (!task.lastUpdateAt) return true;
+    
+    const lastUpdate = new Date(task.lastUpdateAt);
+    const today = new Date();
+    return lastUpdate.toDateString() !== today.toDateString();
+  }) || [];
 
   const recentProjects = projects?.slice(0, 4) || [];
   const recentActivities = activities?.slice(0, 6) || [];
   const topMembers = teamMembers?.slice(0, 5) || [];
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Welcome Section */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold" data-testid="text-welcome">
-          Welcome back, John
+          Welcome back, {user?.name || 'User'}
         </h1>
         <p className="text-muted-foreground">
           Here's what's happening across your projects
         </p>
       </div>
+
+      {/* Daily Updates Section (for non-admins) */}
+      {user?.role !== 'admin' && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-primary" />
+              Daily Updates Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {tasksLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : tasksNeedingUpdate.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground mb-2">
+                  You have {tasksNeedingUpdate.length} tasks that need a progress update today.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {tasksNeedingUpdate.map(task => (
+                    <Card key={task.id} className="bg-card">
+                      <CardContent className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{task.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {task.progress}% complete
+                          </p>
+                        </div>
+                        <TaskUpdateDialog 
+                          task={task} 
+                          trigger={
+                            <Button size="sm" variant="outline" className="h-8">
+                              Update
+                            </Button>
+                          } 
+                        />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                All your tasks are up to date. Great job!
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -221,22 +294,16 @@ export default function HomePage() {
             <StatCard
               title="Active Projects"
               value={stats?.activeProjects || 0}
-              change="+2 this week"
-              changeType="positive"
               icon={FolderKanban}
             />
             <StatCard
               title="Total Tasks"
               value={stats?.totalTasks || 0}
-              change={`${stats?.completedTasks || 0} completed`}
-              changeType="positive"
               icon={CheckSquare}
             />
             <StatCard
               title="Overdue Tasks"
               value={stats?.overdueTasks || 0}
-              change="-3 from last week"
-              changeType="positive"
               icon={AlertTriangle}
             />
             <StatCard
@@ -336,43 +403,68 @@ export default function HomePage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-slate-400" />
-                  <span className="text-sm">To Do</span>
+            {tasksLoading ? (
+              <div className="space-y-4">
+                {Array(4).fill(0).map((_, i) => (
+                  <Skeleton key={i} className="h-6 w-full" />
+                ))}
+              </div>
+            ) : tasks && tasks.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-slate-400" />
+                    <span className="text-sm">To Do</span>
+                  </div>
+                  <span className="text-sm font-medium">
+                    {tasks.filter(t => t.status === 'todo').length}
+                  </span>
                 </div>
-                <span className="text-sm font-medium">24</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-blue-500" />
-                  <span className="text-sm">In Progress</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-blue-500" />
+                    <span className="text-sm">In Progress</span>
+                  </div>
+                  <span className="text-sm font-medium">
+                    {tasks.filter(t => t.status === 'in-progress').length}
+                  </span>
                 </div>
-                <span className="text-sm font-medium">18</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-purple-500" />
-                  <span className="text-sm">Review</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-purple-500" />
+                    <span className="text-sm">Review</span>
+                  </div>
+                  <span className="text-sm font-medium">
+                    {tasks.filter(t => t.status === 'review').length}
+                  </span>
                 </div>
-                <span className="text-sm font-medium">7</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                  <span className="text-sm">Done</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-emerald-500" />
+                    <span className="text-sm">Done</span>
+                  </div>
+                  <span className="text-sm font-medium">
+                    {tasks.filter(t => t.status === 'done').length}
+                  </span>
                 </div>
-                <span className="text-sm font-medium">42</span>
+                <div className="mt-4 pt-4 border-t border-border">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Completion Rate</span>
+                    <span className="font-semibold text-emerald-500">
+                      {tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) : 0}%
+                    </span>
+                  </div>
+                  <Progress 
+                    value={tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) : 0} 
+                    className="mt-2 h-2" 
+                  />
+                </div>
               </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-border">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Completion Rate</span>
-                <span className="font-semibold text-emerald-500">46%</span>
-              </div>
-              <Progress value={46} className="mt-2 h-2" />
-            </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">
+                No tasks available
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -32,6 +32,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    port: 7855,
     fs: {
       strict: true,
       deny: ["**/.*"],

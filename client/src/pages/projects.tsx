@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import {
   Plus,
   Search,
@@ -33,11 +33,80 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { ProgressRing } from "@/components/progress-ring";
-import type { Project } from "@shared/schema";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
+import { useToast } from "@/hooks/use-toast";
+import type { Project, ProjectWithDetails } from "@shared/schema";
 
 type ViewMode = "grid" | "list";
 
-function ProjectGridCard({ project }: { project: Project }) {
+function ProjectGridCard({ project, queryClient, userRole }: { project: ProjectWithDetails; queryClient: any; userRole: string }) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+
+  const canEdit = userRole === 'admin' || userRole === 'manager';
+  const canDelete = userRole === 'admin';
+
+  const handleEdit = () => {
+    if (!canEdit) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to edit projects",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newName = prompt("Enter new project name:", project.name);
+    if (newName && newName !== project.name) {
+      toast({
+        title: "Project Updated",
+        description: `Project name would be updated to: ${newName}`,
+      });
+    }
+  };
+
+  const handleViewDetails = () => {
+    setLocation(`/projects/${project.id}`);
+  };
+
+  const handleDelete = async () => {
+    if (!canDelete) {
+      toast({
+        title: "Access Denied",
+        description: "Only administrators can delete projects",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+      try {
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          toast({
+            title: "Project Deleted",
+            description: `Project "${project.name}" has been deleted`,
+            variant: "destructive",
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to delete project",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete project",
+          variant: "destructive",
+        });
+      }
+    }
+  };
   return (
     <Link href={`/projects/${project.id}`}>
       <Card className="hover-elevate cursor-pointer h-full">
@@ -54,38 +123,45 @@ function ProjectGridCard({ project }: { project: Project }) {
                 {project.description}
               </p>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0"
-                  data-testid={`button-project-menu-${project.id}`}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem>Edit Project</DropdownMenuItem>
-                <DropdownMenuItem>View Details</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive">
-                  Archive Project
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {(canEdit || canDelete) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    data-testid={`button-project-menu-${project.id}`}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canEdit && <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleEdit(); }}>Edit Project</DropdownMenuItem>}
+                  <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleViewDetails(); }}>View Details</DropdownMenuItem>
+                  {canDelete && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive" onClick={(e) => { e.preventDefault(); handleDelete(); }}>
+                        Delete Project
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mb-4">
-            <StatusBadge status={project.status} />
-            <PriorityBadge priority={project.priority} />
+            <StatusBadge status={project.status as any} />
+            <PriorityBadge priority={project.priority as any} />
           </div>
 
           <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
             <Calendar className="h-4 w-4" />
             <span>
-              {new Date(project.startDate).toLocaleDateString()} -{" "}
-              {new Date(project.endDate).toLocaleDateString()}
+              {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} -{" "}
+              {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No end date"}
             </span>
           </div>
 
@@ -94,12 +170,12 @@ function ProjectGridCard({ project }: { project: Project }) {
               <Avatar className="h-7 w-7">
                 <AvatarImage src={project.ownerAvatar} />
                 <AvatarFallback className="text-xs">
-                  {project.ownerName.charAt(0)}
+                  {(project.ownerName || "U").charAt(0)}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-sm">{project.ownerName}</span>
+              <span className="text-sm">{project.ownerName || "Unknown"}</span>
             </div>
-            <ProgressRing progress={project.progress} size={40} strokeWidth={3} />
+            <ProgressRing progress={project.progress || 0} size={40} strokeWidth={3} />
           </div>
         </CardContent>
       </Card>
@@ -107,7 +183,75 @@ function ProjectGridCard({ project }: { project: Project }) {
   );
 }
 
-function ProjectTableRow({ project }: { project: Project }) {
+function ProjectTableRow({ project, userRole }: { project: ProjectWithDetails; userRole: string }) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const canEdit = userRole === 'admin' || userRole === 'manager';
+  const canDelete = userRole === 'admin';
+
+  const handleEdit = () => {
+    if (!canEdit) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to edit projects",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newName = prompt("Enter new project name:", project.name);
+    if (newName && newName !== project.name) {
+      toast({
+        title: "Project Updated",
+        description: `Project name would be updated to: ${newName}`,
+      });
+    }
+  };
+
+  const handleViewDetails = () => {
+    setLocation(`/projects/${project.id}`);
+  };
+
+  const handleDelete = async () => {
+    if (!canDelete) {
+      toast({
+        title: "Access Denied",
+        description: "Only administrators can delete projects",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+      try {
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          toast({
+            title: "Project Deleted",
+            description: `Project "${project.name}" has been deleted`,
+            variant: "destructive",
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to delete project",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete project",
+          variant: "destructive",
+        });
+      }
+    }
+  };
   return (
     <TableRow className="hover-elevate">
       <TableCell>
@@ -124,50 +268,65 @@ function ProjectTableRow({ project }: { project: Project }) {
           <Avatar className="h-6 w-6">
             <AvatarImage src={project.ownerAvatar} />
             <AvatarFallback className="text-xs">
-              {project.ownerName.charAt(0)}
+              {(project.ownerName || "U").charAt(0)}
             </AvatarFallback>
           </Avatar>
-          <span className="text-sm">{project.ownerName}</span>
+          <span className="text-sm">{project.ownerName || "Unknown"}</span>
         </div>
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">
-        {new Date(project.startDate).toLocaleDateString()}
+        {project.startDate ? new Date(project.startDate).toLocaleDateString() : "-"}
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">
-        {new Date(project.endDate).toLocaleDateString()}
+        {project.endDate ? new Date(project.endDate).toLocaleDateString() : "-"}
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2 w-32">
-          <Progress value={project.progress} className="h-2" />
+          <Progress value={project.progress || 0} className="h-2" />
           <span className="text-sm text-muted-foreground w-10">
-            {project.progress}%
+            {project.progress || 0}%
           </span>
         </div>
       </TableCell>
       <TableCell>
-        <StatusBadge status={project.status} />
+        <StatusBadge status={project.status as any} />
       </TableCell>
       <TableCell>
-        <PriorityBadge priority={project.priority} />
+        <PriorityBadge priority={project.priority as any} />
       </TableCell>
       <TableCell>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              data-testid={`button-actions-${project.id}`}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>Edit</DropdownMenuItem>
-            <DropdownMenuItem>View Details</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">Archive</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {(canEdit || canDelete) ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                data-testid={`button-actions-${project.id}`}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canEdit && <DropdownMenuItem onClick={handleEdit}>Edit</DropdownMenuItem>}
+              <DropdownMenuItem onClick={handleViewDetails}>View Details</DropdownMenuItem>
+              {canDelete && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive" onClick={handleDelete}>Delete</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleViewDetails}
+            data-testid={`button-view-${project.id}`}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        )}
       </TableCell>
     </TableRow>
   );
@@ -176,9 +335,17 @@ function ProjectTableRow({ project }: { project: Project }) {
 export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const { data: projects, isLoading } = useQuery<Project[]>({
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const userRole = user?.role || 'member';
+  const canCreate = userRole === 'admin';
+
+  const { data: projects, isLoading } = useQuery<ProjectWithDetails[]>({
     queryKey: ["/api/projects"],
+    enabled: Boolean(user?.id),
   });
 
   const filteredProjects =
@@ -186,21 +353,29 @@ export default function ProjectsPage() {
       p.name.toLowerCase().includes(searchQuery.toLowerCase())
     ) || [];
 
+  const handleProjectCreated = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+  };
+
+  const handleFilterClick = () => {
+    toast({
+      title: "Filters",
+      description: "Advanced filtering options coming soon",
+    });
+  };
+
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-xl font-semibold">Projects</h1>
             <p className="text-sm text-muted-foreground">
-              Manage and track all your projects
+              {canCreate ? "Manage and track all your projects" : "View and track all projects"}
             </p>
           </div>
-          <Button data-testid="button-create-project">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Project
-          </Button>
+          {canCreate && <CreateProjectDialog onProjectCreated={handleProjectCreated} />}
         </div>
 
         {/* Filters */}
@@ -216,7 +391,7 @@ export default function ProjectsPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" data-testid="button-filter">
+            <Button variant="outline" size="sm" data-testid="button-filter" onClick={handleFilterClick}>
               <Filter className="h-4 w-4 mr-2" />
               Filters
             </Button>
@@ -274,7 +449,7 @@ export default function ProjectsPage() {
           viewMode === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredProjects.map((project) => (
-                <ProjectGridCard key={project.id} project={project} />
+                <ProjectGridCard key={project.id} project={project} queryClient={queryClient} userRole={userRole} />
               ))}
             </div>
           ) : (
@@ -294,7 +469,7 @@ export default function ProjectsPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredProjects.map((project) => (
-                    <ProjectTableRow key={project.id} project={project} />
+                    <ProjectTableRow key={project.id} project={project} userRole={userRole} />
                   ))}
                 </TableBody>
               </Table>
@@ -310,13 +485,10 @@ export default function ProjectsPage() {
               <p className="text-muted-foreground text-center max-w-sm mb-4">
                 {searchQuery
                   ? "Try adjusting your search query"
-                  : "Get started by creating your first project"}
+                  : canCreate ? "Get started by creating your first project" : "No projects have been assigned to you yet"}
               </p>
-              {!searchQuery && (
-                <Button data-testid="button-create-first-project">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Project
-                </Button>
+              {!searchQuery && canCreate && (
+                <CreateProjectDialog onProjectCreated={handleProjectCreated} />
               )}
             </CardContent>
           </Card>

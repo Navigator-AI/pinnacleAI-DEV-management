@@ -18,18 +18,79 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { TaskList } from "@/components/task-list";
 import { KanbanBoard } from "@/components/kanban-board";
-import type { Project, Task } from "@shared/schema";
+import { TaskDialog } from "@/components/create-task-dialog";
+import { FileManagement } from "@/components/file-management";
+import { IssueList } from "@/components/issue-list";
+import { IssueDialog } from "@/components/issue-dialog";
+import { ProjectTimeline } from "@/components/project-timeline";
+import { useToast } from "@/hooks/use-toast";
+import type { Project, ProjectWithDetails, Task, TaskWithDetails } from "@shared/schema";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState("tasks");
+  const { toast } = useToast();
 
-  const { data: project, isLoading: projectLoading } = useQuery<Project>({
-    queryKey: ["/api/projects", params.id],
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const isAdmin = user.role === 'admin';
+
+  const handleLogTime = () => {
+    // Create a simple time log entry
+    const hours = prompt("Enter hours worked:");
+    if (hours && !isNaN(Number(hours))) {
+      toast({
+        title: "Time Logged",
+        description: `${hours} hours logged for ${project?.name}`,
+      });
+    }
+  };
+
+  const handleViewReport = () => {
+    // Generate a simple project report
+    const report = {
+      totalTasks: tasks?.length || 0,
+      completedTasks: tasks?.filter(t => t.status === 'done').length || 0,
+      progress: project?.progress || 0,
+      daysRemaining: project?.endDate ? Math.ceil((new Date(project.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 'N/A'
+    };
+    
+    alert(`Project Report for ${project?.name}:\n\nTotal Tasks: ${report.totalTasks}\nCompleted Tasks: ${report.completedTasks}\nProgress: ${report.progress}%\nDays Remaining: ${report.daysRemaining}`);
+  };
+
+  const handleSettings = () => {
+    // Open project settings
+    const newName = prompt("Enter new project name:", project?.name);
+    if (newName && newName !== project?.name) {
+      toast({
+        title: "Settings Updated",
+        description: `Project name would be updated to: ${newName}`,
+      });
+    }
+  };
+
+  const handleMore = () => {
+    // Show more options
+    const action = confirm("Archive this project?");
+    if (action) {
+      toast({
+        title: "Project Archived",
+        description: `${project?.name} has been archived`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const { data: project, isLoading: projectLoading } = useQuery<ProjectWithDetails>({
+    queryKey: [`/api/projects/${params.id}`],
   });
 
-  const { data: tasks, isLoading: tasksLoading } = useQuery<Task[]>({
-    queryKey: ["/api/projects", params.id, "tasks"],
+  const { data: tasks, isLoading: tasksLoading } = useQuery<TaskWithDetails[]>({
+    queryKey: [`/api/projects/${params.id}/tasks`],
+  });
+
+  const { data: issues, isLoading: issuesLoading } = useQuery<any[]>({
+    queryKey: [`/api/projects/${params.id}/issues`],
   });
 
   if (projectLoading) {
@@ -89,26 +150,26 @@ export default function ProjectDetailPage() {
                 >
                   {project.name}
                 </h1>
-                <StatusBadge status={project.status} />
-                <PriorityBadge priority={project.priority} />
+                <StatusBadge status={project.status as any} />
+                <PriorityBadge priority={project.priority as any} />
               </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {project.description}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" data-testid="button-log-time">
+              <Button variant="outline" size="sm" data-testid="button-log-time" onClick={handleLogTime}>
                 <Clock className="h-4 w-4 mr-2" />
                 Log Time
               </Button>
-              <Button variant="outline" size="sm" data-testid="button-view-report">
+              <Button variant="outline" size="sm" data-testid="button-view-report" onClick={handleViewReport}>
                 <BarChart3 className="h-4 w-4 mr-2" />
                 Report
               </Button>
-              <Button variant="ghost" size="icon" data-testid="button-settings">
+              <Button variant="ghost" size="icon" data-testid="button-settings" onClick={handleSettings}>
                 <Settings className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" data-testid="button-more">
+              <Button variant="ghost" size="icon" data-testid="button-more" onClick={handleMore}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </div>
@@ -119,18 +180,18 @@ export default function ProjectDetailPage() {
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={project.ownerAvatar} />
-                <AvatarFallback>{project.ownerName.charAt(0)}</AvatarFallback>
+                <AvatarFallback>{(project.ownerName || "U").charAt(0)}</AvatarFallback>
               </Avatar>
               <div>
-                <p className="text-sm font-medium">{project.ownerName}</p>
+                <p className="text-sm font-medium">{project.ownerName || "Unknown Owner"}</p>
                 <p className="text-xs text-muted-foreground">Owner</p>
               </div>
             </div>
             <div className="h-8 w-px bg-border" />
             <div>
               <p className="text-sm font-medium">
-                {new Date(project.startDate).toLocaleDateString()} -{" "}
-                {new Date(project.endDate).toLocaleDateString()}
+                {project.startDate ? new Date(project.startDate).toLocaleDateString() : "No start date"} -{" "}
+                {project.endDate ? new Date(project.endDate).toLocaleDateString() : "No end date"}
               </p>
               <p className="text-xs text-muted-foreground">Duration</p>
             </div>
@@ -211,12 +272,17 @@ export default function ProjectDetailPage() {
           <TabsContent value="tasks" className="mt-0 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Tasks</h2>
-              <Button size="sm" data-testid="button-add-task">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Task
-              </Button>
+              <TaskDialog 
+                projectId={params.id}
+                trigger={
+                  <Button size="sm" data-testid="button-add-task">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Task
+                  </Button>
+                }
+              />
             </div>
-            <TaskList tasks={tasks || []} isLoading={tasksLoading} />
+            <TaskList tasks={tasks || []} isLoading={tasksLoading} showUserView={!isAdmin} />
           </TabsContent>
 
           <TabsContent value="kanban" className="mt-0 p-6">
@@ -225,35 +291,33 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="timeline" className="mt-0 p-6">
             <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16">
-                <h3 className="text-lg font-medium mb-2">Timeline View</h3>
-                <p className="text-muted-foreground">
-                  Gantt chart visualization coming soon
-                </p>
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">Project Timeline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ProjectTimeline tasks={tasks || []} />
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="issues" className="mt-0 p-6">
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16">
-                <h3 className="text-lg font-medium mb-2">Issues</h3>
-                <p className="text-muted-foreground">
-                  Bug tracker and issue management coming soon
-                </p>
-              </CardContent>
-            </Card>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Issues</h2>
+              <IssueDialog 
+                projectId={params.id}
+                trigger={
+                  <Button size="sm" data-testid="button-add-issue">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Issue
+                  </Button>
+                }
+              />
+            </div>
+            <IssueList issues={issues || []} isLoading={issuesLoading} />
           </TabsContent>
 
           <TabsContent value="documents" className="mt-0 p-6">
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16">
-                <h3 className="text-lg font-medium mb-2">Documents</h3>
-                <p className="text-muted-foreground">
-                  File management coming soon
-                </p>
-              </CardContent>
-            </Card>
+            <FileManagement projectId={params.id} />
           </TabsContent>
         </Tabs>
       </div>

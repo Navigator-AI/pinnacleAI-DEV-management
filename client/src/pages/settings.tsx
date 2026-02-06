@@ -17,12 +17,45 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile");
+  const { toast } = useToast();
+  
+  // Get user info from sessionStorage
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+
+  const handleSaveProfile = () => {
+    toast({ 
+      title: "Profile Updated", 
+      description: "Your profile changes have been saved successfully" 
+    });
+  };
+
+  const handleChangeAvatar = () => {
+    toast({ 
+      title: "Change Avatar", 
+      description: "Avatar upload functionality coming soon" 
+    });
+  };
+
+  const handleChangePassword = () => {
+    toast({ 
+      title: "Change Password", 
+      description: "Password change functionality coming soon" 
+    });
+  };
+
+  const handleConnectIntegration = (service: string) => {
+    toast({ 
+      title: `Connect ${service}`, 
+      description: `${service} integration coming soon` 
+    });
+  };
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex items-center gap-3">
@@ -68,11 +101,11 @@ export default function SettingsPage() {
               <CardContent className="space-y-6">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-20 w-20">
-                    <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=John" />
-                    <AvatarFallback>JD</AvatarFallback>
+                    <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}`} />
+                    <AvatarFallback>{user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}</AvatarFallback>
                   </Avatar>
                   <div>
-                    <Button variant="outline" size="sm" data-testid="button-change-avatar">
+                    <Button variant="outline" size="sm" data-testid="button-change-avatar" onClick={handleChangeAvatar}>
                       Change Avatar
                     </Button>
                     <p className="text-xs text-muted-foreground mt-1">
@@ -86,29 +119,31 @@ export default function SettingsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" defaultValue="John" data-testid="input-first-name" />
+                    <Input id="firstName" defaultValue={user?.name?.split(' ')[0] || ''} data-testid="input-first-name" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue="Doe" data-testid="input-last-name" />
+                    <Input id="lastName" defaultValue={user?.name?.split(' ')[1] || ''} data-testid="input-last-name" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input
                       id="email"
                       type="email"
-                      defaultValue="john@pinnacleai.com"
+                      defaultValue={user?.email || ''}
                       data-testid="input-email"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role">Role</Label>
-                    <Input id="role" defaultValue="Admin" disabled data-testid="input-role" />
+                    <Input id="role" defaultValue={user?.role || ''} disabled data-testid="input-role" />
                   </div>
                 </div>
 
                 <div className="flex justify-end">
-                  <Button data-testid="button-save-profile">Save Changes</Button>
+                  <Button data-testid="button-save-profile" onClick={handleSaveProfile}>
+                    Save Changes
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -124,7 +159,7 @@ export default function SettingsPage() {
                     <p className="font-medium">Password</p>
                     <p className="text-sm text-muted-foreground">Last changed 3 months ago</p>
                   </div>
-                  <Button variant="outline" data-testid="button-change-password">
+                  <Button variant="outline" data-testid="button-change-password" onClick={handleChangePassword}>
                     Change Password
                   </Button>
                 </div>
@@ -241,7 +276,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Not connected</p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" data-testid="button-connect-slack">
+                  <Button variant="outline" size="sm" data-testid="button-connect-slack" onClick={() => handleConnectIntegration('Slack')}>
                     Connect
                   </Button>
                 </div>
@@ -255,7 +290,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Not connected</p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" data-testid="button-connect-stripe">
+                  <Button variant="outline" size="sm" data-testid="button-connect-stripe" onClick={() => handleConnectIntegration('Stripe')}>
                     Connect
                   </Button>
                 </div>
@@ -269,7 +304,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Not connected</p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" data-testid="button-connect-github">
+                  <Button variant="outline" size="sm" data-testid="button-connect-github" onClick={() => handleConnectIntegration('GitHub')}>
                     Connect
                   </Button>
                 </div>

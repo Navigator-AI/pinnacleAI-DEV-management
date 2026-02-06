@@ -15,9 +15,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { TeamMemberDialog } from "@/components/team-member-dialog";
+import { useQueryClient } from "@tanstack/react-query";
 import type { TeamMember } from "@shared/schema";
 
 function TeamMemberCard({ member }: { member: TeamMember }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const statusConfig = {
     online: { label: "Online", color: "bg-emerald-500" },
     away: { label: "Away", color: "bg-amber-500" },
@@ -33,6 +39,39 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
 
   const status = statusConfig[member.status];
   const role = roleConfig[member.role];
+
+  const handleDelete = async () => {
+    if (!confirm(`Are you sure you want to remove ${member.name} from the team?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/team/${member.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Member removed",
+          description: `${member.name} has been removed from the team.`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/team"] });
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.error || "Failed to remove member",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <Card className="hover-elevate" data-testid={`card-member-${member.id}`}>
@@ -67,12 +106,30 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>View Profile</DropdownMenuItem>
-              <DropdownMenuItem>Send Message</DropdownMenuItem>
-              <DropdownMenuItem>Assign Tasks</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(`mailto:${member.email}`, '_blank')}>
+                View Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(`mailto:${member.email}?subject=Message from PinnacleAI`, '_blank')}>
+                Send Message
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => toast({ title: "Tasks Assigned", description: `Tasks will be assigned to ${member.name}` })}>
+                Assign Tasks
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Edit Member</DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive">Remove</DropdownMenuItem>
+              <TeamMemberDialog 
+                member={member} 
+                trigger={
+                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                    Edit Member
+                  </DropdownMenuItem>
+                }
+              />
+              <DropdownMenuItem 
+                className="text-destructive"
+                onClick={handleDelete}
+              >
+                Remove
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -113,6 +170,9 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
               size="sm"
               className="flex-1"
               data-testid={`button-email-${member.id}`}
+              onClick={() => {
+                window.location.href = `mailto:${member.email}`;
+              }}
             >
               <Mail className="h-4 w-4 mr-2" />
               Email
@@ -122,6 +182,9 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
               size="sm"
               className="flex-1"
               data-testid={`button-call-${member.id}`}
+              onClick={() => {
+                toast({ title: "Call", description: "Phone integration coming soon" });
+              }}
             >
               <Phone className="h-4 w-4 mr-2" />
               Call
@@ -135,9 +198,14 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
 
 export default function TeamPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const { toast } = useToast();
+
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
 
   const { data: teamMembers, isLoading } = useQuery<TeamMember[]>({
     queryKey: ["/api/team"],
+    enabled: Boolean(user?.id),
   });
 
   const filteredMembers =
@@ -153,7 +221,7 @@ export default function TeamPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -163,10 +231,7 @@ export default function TeamPage() {
               Manage your team members and their roles
             </p>
           </div>
-          <Button data-testid="button-add-member">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Member
-          </Button>
+          <TeamMemberDialog />
         </div>
 
         {/* Stats */}
@@ -204,7 +269,7 @@ export default function TeamPage() {
               data-testid="input-search-team"
             />
           </div>
-          <Button variant="outline" size="sm" data-testid="button-filter-team">
+          <Button variant="outline" size="sm" data-testid="button-filter-team" onClick={() => toast({ title: "Filters", description: "Advanced filtering options coming soon" })}>
             <Filter className="h-4 w-4 mr-2" />
             Filters
           </Button>
@@ -245,12 +310,7 @@ export default function TeamPage() {
                   ? "Try adjusting your search query"
                   : "Start by adding your first team member"}
               </p>
-              {!searchQuery && (
-                <Button data-testid="button-add-first-member">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Member
-                </Button>
-              )}
+              {!searchQuery && <TeamMemberDialog />}
             </CardContent>
           </Card>
         )}

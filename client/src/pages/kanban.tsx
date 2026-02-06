@@ -1,17 +1,38 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Filter, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KanbanBoard } from "@/components/kanban-board";
-import type { Task } from "@shared/schema";
+import { TaskDialog } from "@/components/create-task-dialog";
+import { useToast } from "@/hooks/use-toast";
+import type { Task, TaskWithDetails } from "@shared/schema";
 
 export default function KanbanPage() {
-  const { data: tasks, isLoading } = useQuery<Task[]>({
+  const [searchQuery, setSearchQuery] = useState("");
+  const { toast } = useToast();
+  
+  // Get user info from sessionStorage (matches App.tsx storage)
+  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  
+  const { data: tasks, isLoading } = useQuery<TaskWithDetails[]>({
     queryKey: ["/api/tasks"],
+    enabled: Boolean(user?.id),
   });
 
+  const filteredTasks = tasks?.filter(task => 
+    task.title.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
+
+  const handleFilterClick = () => {
+    toast({
+      title: "Filters",
+      description: "Advanced filtering options coming soon",
+    });
+  };
+
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="h-full overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -21,10 +42,14 @@ export default function KanbanPage() {
               Visualize and manage tasks across all projects
             </p>
           </div>
-          <Button data-testid="button-add-task-kanban">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Task
-          </Button>
+          <TaskDialog 
+            trigger={
+              <Button data-testid="button-add-task-kanban">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Task
+              </Button>
+            }
+          />
         </div>
 
         {/* Filters */}
@@ -35,9 +60,11 @@ export default function KanbanPage() {
               placeholder="Search tasks..."
               className="pl-9"
               data-testid="input-search-kanban"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button variant="outline" size="sm" data-testid="button-filter-kanban">
+          <Button variant="outline" size="sm" data-testid="button-filter-kanban" onClick={handleFilterClick}>
             <Filter className="h-4 w-4 mr-2" />
             Filters
           </Button>
@@ -46,7 +73,7 @@ export default function KanbanPage() {
 
       {/* Kanban Board */}
       <div className="p-6">
-        <KanbanBoard tasks={tasks || []} isLoading={isLoading} />
+        <KanbanBoard tasks={filteredTasks} isLoading={isLoading} />
       </div>
     </div>
   );
