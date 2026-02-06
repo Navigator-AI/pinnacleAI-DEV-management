@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Filter, Plus, MoreHorizontal, Mail, Phone } from "lucide-react";
+import { Search, Filter, Plus, MoreHorizontal, Mail, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -181,13 +181,21 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
               variant="outline"
               size="sm"
               className="flex-1"
-              data-testid={`button-call-${member.id}`}
+              data-testid={`button-teams-${member.id}`}
               onClick={() => {
-                toast({ title: "Call", description: "Phone integration coming soon" });
+                if (member.teamsUsername) {
+                  window.open(`https://teams.microsoft.com/l/chat/0/0?users=${member.teamsUsername}`, '_blank');
+                } else {
+                  toast({ 
+                    title: "Teams Username Not Set", 
+                    description: `${member.name} hasn't set their Microsoft Teams username yet.`,
+                    variant: "destructive"
+                  });
+                }
               }}
             >
-              <Phone className="h-4 w-4 mr-2" />
-              Call
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Teams
             </Button>
           </div>
         </div>

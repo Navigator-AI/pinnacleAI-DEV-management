@@ -38,6 +38,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     name: string;
     email: string;
     username: string;
+    teamsUsername?: string;
     password?: string;
     role: TeamMember["role"];
     status: TeamMember["status"];
@@ -45,6 +46,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     name: "",
     email: "",
     username: "",
+    teamsUsername: "",
     password: "",
     role: "member",
     status: "online",
@@ -56,6 +58,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         name: member.name,
         email: member.email,
         username: member.email.split('@')[0], // Fallback username
+        teamsUsername: member.teamsUsername || "",
         password: "", // Don't show password
         role: member.role,
         status: member.status,
@@ -65,6 +68,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         name: "",
         email: "",
         username: "",
+        teamsUsername: "",
         password: "",
         role: "member",
         status: "online",
@@ -83,6 +87,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         name: formData.name,
         email: formData.email,
         username: formData.username || formData.email.split('@')[0],
+        teamsUsername: formData.teamsUsername || null,
         password: formData.password || "password", // Default password for new members
         role: formData.role,
         status: formData.status
@@ -187,6 +192,15 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
                 />
               </div>
             )}
+            <div className="grid gap-2">
+              <Label htmlFor="teamsUsername">Microsoft Teams Username</Label>
+              <Input
+                id="teamsUsername"
+                value={formData.teamsUsername}
+                onChange={(e) => setFormData({ ...formData, teamsUsername: e.target.value })}
+                placeholder="john.doe@company.com"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="role">Role</Label>

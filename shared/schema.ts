@@ -10,6 +10,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  teamsUsername: text("teams_username"),
   avatar: text("avatar"),
   role: text("role").notNull().default("member"),
   status: text("status").notNull().default("online"),
@@ -151,6 +152,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   name: true,
   email: true,
+  teamsUsername: true,
   avatar: true,
   role: true,
   status: true,
@@ -231,6 +233,7 @@ export interface TeamMember {
   id: string;
   name: string;
   email: string;
+  teamsUsername?: string;
   avatar?: string;
   role: "admin" | "manager" | "member";
   status: "online" | "away" | "busy" | "offline";

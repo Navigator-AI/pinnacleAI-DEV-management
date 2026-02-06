@@ -110,9 +110,9 @@ export function TaskDialog({ task, projectId, onSuccess, trigger, open: controll
     enabled: open,
   });
 
-  const { data: teamMembers } = useQuery<TeamMember[]>({
+  const { data: teamMembers, isLoading: isLoadingTeam } = useQuery<TeamMember[]>({
     queryKey: ["/api/team"],
-    enabled: open,
+    enabled: open && canAssignUsers,
   });
 
   const toggleAssignee = (memberId: string) => {
@@ -280,25 +280,58 @@ export function TaskDialog({ task, projectId, onSuccess, trigger, open: controll
                         </Select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    {canAssignUsers && (
                       <div className="grid gap-2">
-                        <Label htmlFor="assignee">Assignee</Label>
-                        <Select
-                          value={formData.assigneeId}
-                          onValueChange={(value) => setFormData({ ...formData, assigneeId: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select team member" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {teamMembers?.map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Label className="flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Assignees
+                        </Label>
+                        {isLoadingTeam ? (
+                          <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+                            Loading team members...
+                          </div>
+                        ) : !teamMembers || teamMembers.length === 0 ? (
+                          <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+                            No team members available.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                              {teamMembers.map((member) => (
+                                <div
+                                  key={member.id}
+                                  className={`flex items-center gap-3 p-2 rounded-md ${
+                                    selectedAssignees.includes(member.id) ? "bg-muted" : ""
+                                  }`}
+                                >
+                                  <Checkbox
+                                    checked={selectedAssignees.includes(member.id)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedAssignees([...selectedAssignees, member.id]);
+                                      } else {
+                                        setSelectedAssignees(selectedAssignees.filter(id => id !== member.id));
+                                      }
+                                    }}
+                                  />
+                                  <Avatar className="h-6 w-6">
+                                    <AvatarImage src={member.avatar} />
+                                    <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-sm">{member.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {selectedAssignees.length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                {selectedAssignees.length} assignee{selectedAssignees.length > 1 ? 's' : ''} selected
+                              </p>
+                            )}
+                          </>
+                        )}
                       </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="dueDate">Due Date</Label>
                         <Input
@@ -429,31 +462,48 @@ export function TaskDialog({ task, projectId, onSuccess, trigger, open: controll
                     <Users className="h-4 w-4" />
                     Assignees
                   </Label>
-                  <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
-                    {teamMembers?.map((member) => (
-                      <div
-                        key={member.id}
-                        className={`flex items-center gap-3 p-2 rounded-md cursor-pointer hover:bg-muted/50 ${
-                          selectedAssignees.includes(member.id) ? "bg-muted" : ""
-                        }`}
-                        onClick={() => toggleAssignee(member.id)}
-                      >
-                        <Checkbox
-                          checked={selectedAssignees.includes(member.id)}
-                          onCheckedChange={() => toggleAssignee(member.id)}
-                        />
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={member.avatar} />
-                          <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm">{member.name}</span>
+                  {isLoadingTeam ? (
+                    <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+                      Loading team members...
+                    </div>
+                  ) : !teamMembers || teamMembers.length === 0 ? (
+                    <div className="border rounded-md p-4 text-center text-sm text-muted-foreground">
+                      No team members available. Please add team members first.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                        {teamMembers.map((member) => (
+                          <div
+                            key={member.id}
+                            className={`flex items-center gap-3 p-2 rounded-md ${
+                              selectedAssignees.includes(member.id) ? "bg-muted" : ""
+                            }`}
+                          >
+                            <Checkbox
+                              checked={selectedAssignees.includes(member.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedAssignees([...selectedAssignees, member.id]);
+                                } else {
+                                  setSelectedAssignees(selectedAssignees.filter(id => id !== member.id));
+                                }
+                              }}
+                            />
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={member.avatar} />
+                              <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{member.name}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  {selectedAssignees.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {selectedAssignees.length} assignee{selectedAssignees.length > 1 ? 's' : ''} selected
-                    </p>
+                      {selectedAssignees.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {selectedAssignees.length} assignee{selectedAssignees.length > 1 ? 's' : ''} selected
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
