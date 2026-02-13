@@ -1072,6 +1072,97 @@ export async function registerRoutes(
     }
   });
 
+  // Reports & Analytics
+  app.get("/api/reports/stats", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const userRole = (req.user as any)?.role;
+      
+      // Get all projects, tasks, and team members
+      const projects = await storage.getProjects(userId);
+      const tasks = await storage.getTasks(userId);
+      const teamMembers = await storage.getTeamMembers();
+      
+      // Calculate project health (percentage of projects on track)
+      const onTrackProjects = projects.filter(p => p.status === 'active').length;
+      const projectHealth = projects.length > 0 ? Math.round((onTrackProjects / projects.length) * 100) : 0;
+      
+      // Calculate task completion
+      const completedTasks = tasks.filter(t => t.status === 'done').length;
+      const taskCompletion = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+      
+      // Calculate team efficiency (tasks completed vs total tasks)
+      const teamEfficiency = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+      
+      res.json({
+        projectHealth,
+        taskCompletion: completedTasks,
+        totalTasks: tasks.length,
+        teamEfficiency,
+        totalProjects: projects.length,
+        totalTeamMembers: teamMembers.length
+      });
+    } catch (error) {
+      console.error('Get reports stats error:', error);
+      res.status(500).json({ error: "Failed to get reports stats" });
+    }
+  });
+
+  app.get("/api/reports/task-completion-trend", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const tasks = await storage.getTasks(userId);
+      
+      // Group tasks by status
+      const statusCounts = {
+        todo: tasks.filter(t => t.status === 'todo').length,
+        'in-progress': tasks.filter(t => t.status === 'in-progress').length,
+        review: tasks.filter(t => t.status === 'review').length,
+        done: tasks.filter(t => t.status === 'done').length
+      };
+      
+      res.json(statusCounts);
+    } catch (error) {
+      console.error('Get task completion trend error:', error);
+      res.status(500).json({ error: "Failed to get task completion trend" });
+    }
+  });
+
+  app.get("/api/reports/workload-distribution", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const tasks = await storage.getTasks(userId);
+      const teamMembers = await storage.getTeamMembers();
+      
+      // Calculate workload per team member
+      const workloadMap = new Map();
+      
+      teamMembers.forEach(member => {
+        workloadMap.set(member.id, {
+          name: member.name,
+          totalTasks: 0,
+          completedTasks: 0,
+          inProgressTasks: 0
+        });
+      });
+      
+      tasks.forEach(task => {
+        if (task.assigneeId && workloadMap.has(task.assigneeId)) {
+          const workload = workloadMap.get(task.assigneeId);
+          workload.totalTasks++;
+          if (task.status === 'done') workload.completedTasks++;
+          if (task.status === 'in-progress') workload.inProgressTasks++;
+        }
+      });
+      
+      const workloadData = Array.from(workloadMap.values());
+      res.json(workloadData);
+    } catch (error) {
+      console.error('Get workload distribution error:', error);
+      res.status(500).json({ error: "Failed to get workload distribution" });
+    }
+  });
+
   // Folders & Documents
   app.get("/api/projects/:id/folders", requireAuth, async (req, res) => {
     try {

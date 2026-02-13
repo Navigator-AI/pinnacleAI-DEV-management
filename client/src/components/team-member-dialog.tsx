@@ -40,6 +40,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     username: string;
     teamsUsername?: string;
     password?: string;
+    gender: string;
     role: TeamMember["role"];
     status: TeamMember["status"];
   }>({
@@ -48,6 +49,7 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     username: "",
     teamsUsername: "",
     password: "",
+    gender: "male",
     role: "member",
     status: "online",
   });
@@ -88,7 +90,8 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         email: formData.email,
         username: formData.username || formData.email.split('@')[0],
         teamsUsername: formData.teamsUsername || null,
-        password: formData.password || "password", // Default password for new members
+        password: formData.password || "password",
+        gender: formData.gender,
         role: formData.role,
         status: formData.status
       };
@@ -218,6 +221,23 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="gender">Gender</Label>
+                <Select
+                  value={formData.gender}
+                  onValueChange={(value: any) => setFormData({ ...formData, gender: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Male</SelectItem>
+                    <SelectItem value="female">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="status">Status</Label>
                 <Select

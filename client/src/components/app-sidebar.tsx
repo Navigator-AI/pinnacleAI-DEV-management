@@ -39,9 +39,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, Task, IssueTable } from "@shared/schema";
 
-export function AppSidebar({ user }: { user: { id: string; name: string; email: string; role: string } }) {
+export function AppSidebar({ user }: { user: { id: string; name: string; email: string; role: string; avatar?: string } }) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Fetch full user data to get avatar
+  const { data: userData } = useQuery({
+    queryKey: [`/api/users/${user.id}`],
+    enabled: Boolean(user?.id),
+  });
 
   // Only fetch data if user is authenticated
   const { data: projects } = useQuery<Project[]>({
@@ -152,15 +158,12 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Triangle className="h-4 w-4 fill-current" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-sm">
+            <span className="text-xs font-bold">AI</span>
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">
-              PinnacleAI
-            </span>
-            <span className="text-xs text-muted-foreground">Projects</span>
-          </div>
+          <span className="text-sm font-semibold text-foreground">
+            SierraEdge AI
+          </span>
         </Link>
       </SidebarHeader>
 
@@ -174,7 +177,7 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
           <DropdownMenuTrigger asChild>
             <div className="flex items-center gap-3 rounded-md p-2 hover-elevate cursor-pointer">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} />
+                <AvatarImage src={userData?.avatar || user.avatar} />
                 <AvatarFallback>{user.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
               </Avatar>
               <div className="flex flex-1 flex-col">

@@ -27,7 +27,7 @@ services:
       - NODE_ENV=production
       - DEFAULT_ADMIN_USERNAME=admin
       - DEFAULT_ADMIN_PASSWORD=password
-      - DEFAULT_ADMIN_EMAIL=admin@sierraedge.ai
+      - DEFAULT_ADMIN_EMAIL=admin@pinnacle.ai
     ports:
       - "7855:7855"
     depends_on:

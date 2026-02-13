@@ -107,7 +107,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 <Label htmlFor="email" className="text-slate-200">Username</Label>
                 <Input
                   id="email"
-                  type="email"
+                  type="text"
                   placeholder="Enter your username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

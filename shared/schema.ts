@@ -5,13 +5,14 @@ import { z } from "zod";
 
 // Users table
 export const users = pgTable("users", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   teamsUsername: text("teams_username"),
   avatar: text("avatar"),
+  gender: text("gender").default("male"),
   role: text("role").notNull().default("member"),
   status: text("status").notNull().default("online"),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
@@ -25,28 +26,28 @@ export type TaskStatus = "todo" | "in-progress" | "review" | "done";
 
 // Projects table
 export const projects = pgTable("projects", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
-  ownerId: text("owner_id").references(() => users.id),
+  ownerId: uuid("owner_id").references(() => users.id),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   progress: integer("progress").default(0),
   status: text("status").notNull().default("on-track"),
   priority: text("priority").notNull().default("medium"),
-  portfolioId: text("portfolio_id"),
+  portfolioId: uuid("portfolio_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Tasks table
 export const tasks = pgTable("tasks", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  projectId: text("project_id").references(() => projects.id),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: uuid("project_id").references(() => projects.id),
   title: text("title").notNull(),
   description: text("description"),
-  assigneeId: text("assignee_id").references(() => users.id), // Primary assignee (kept for backwards compatibility)
-  createdBy: text("created_by").references(() => users.id), // Who created the task
+  assigneeId: uuid("assignee_id").references(() => users.id), // Primary assignee (kept for backwards compatibility)
+  createdBy: uuid("created_by").references(() => users.id), // Who created the task
   priority: text("priority").notNull().default("medium"),
   status: text("status").notNull().default("todo"),
   startDate: timestamp("start_date"),
@@ -59,16 +60,16 @@ export const tasks = pgTable("tasks", {
 
 // Task Assignees junction table (for multiple assignees)
 export const taskAssignees = pgTable("task_assignees", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  taskId: text("task_id").references(() => tasks.id).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow(),
-  assignedBy: text("assigned_by").references(() => users.id),
+  assignedBy: uuid("assigned_by").references(() => users.id),
 });
 
 // Portfolios table
 export const portfolios = pgTable("portfolios", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -77,9 +78,9 @@ export const portfolios = pgTable("portfolios", {
 
 // Activities table
 export const activities = pgTable("activities", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  projectId: text("project_id").references(() => projects.id),
-  userId: text("user_id").references(() => users.id),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: uuid("project_id").references(() => projects.id),
+  userId: uuid("user_id").references(() => users.id),
   action: text("action").notNull(),
   target: text("target").notNull(),
   targetType: text("target_type").notNull(),
@@ -88,23 +89,23 @@ export const activities = pgTable("activities", {
 
 // Issues table
 export const issues = pgTable("issues", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  projectId: text("project_id").references(() => projects.id),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: uuid("project_id").references(() => projects.id),
   title: text("title").notNull(),
   description: text("description"),
   type: text("type").notNull().default("bug"), // bug, feature, improvement, task
   severity: text("severity").notNull().default("medium"), // low, medium, high, critical
   status: text("status").notNull().default("open"), // open, in-progress, resolved, closed
-  assigneeId: text("assignee_id").references(() => users.id),
+  assigneeId: uuid("assignee_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Task Updates table (Daily Updates)
 export const taskUpdates = pgTable("task_updates", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  taskId: text("task_id").references(() => tasks.id).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   content: text("content").notNull(),
   progress: integer("progress"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -112,8 +113,8 @@ export const taskUpdates = pgTable("task_updates", {
 
 // Subtasks table
 export const subtasks = pgTable("subtasks", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  taskId: text("task_id").references(() => tasks.id).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
   title: text("title").notNull(),
   completed: boolean("completed").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -121,9 +122,9 @@ export const subtasks = pgTable("subtasks", {
 
 // Comments table
 export const comments = pgTable("comments", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  taskId: text("task_id").references(() => tasks.id).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: uuid("task_id").references(() => tasks.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -154,6 +155,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   teamsUsername: true,
   avatar: true,
+  gender: true,
   role: true,
   status: true,
 });
@@ -179,7 +181,7 @@ export type InsertIssue = z.infer<typeof insertIssueSchema>;
 
 // Login schema
 export const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -235,6 +237,7 @@ export interface TeamMember {
   email: string;
   teamsUsername?: string;
   avatar?: string;
+  gender?: string;
   role: "admin" | "manager" | "member";
   status: "online" | "away" | "busy" | "offline";
   workload: number; // 0-100 percentage
@@ -311,31 +314,31 @@ export interface TimesheetEntry {
 
 // Folders table
 export const folders = pgTable("folders", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  projectId: text("project_id").references(() => projects.id).notNull(),
-  parentId: text("parent_id"),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: uuid("project_id").references(() => projects.id).notNull(),
+  parentId: uuid("parent_id"),
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Documents table
 export const documents = pgTable("documents", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  projectId: text("project_id").references(() => projects.id).notNull(),
-  folderId: text("folder_id").references(() => folders.id),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: uuid("project_id").references(() => projects.id).notNull(),
+  folderId: uuid("folder_id").references(() => folders.id),
   name: text("name").notNull(),
   type: text("type").notNull(),
   size: integer("size").notNull(),
   url: text("url").notNull(),
-  uploadedBy: text("uploaded_by").references(() => users.id).notNull(),
+  uploadedBy: uuid("uploaded_by").references(() => users.id).notNull(),
   uploadedAt: timestamp("uploaded_at").defaultNow(),
   version: integer("version").default(1),
 });
 
 // Notifications table
 export const notifications = pgTable("notifications", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
-  userId: text("user_id").references(() => users.id),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id),
   title: text("title").notNull(),
   message: text("message").notNull(),
   type: text("type").notNull().default("info"),

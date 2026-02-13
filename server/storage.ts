@@ -70,36 +70,37 @@ try {
   throw new Error("Database connection failed. Please check your DATABASE_URL configuration.");
 }
 
-// Generate avatar URL
-const avatar = (seed: string) =>
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`;
+// Generate avatar URL based on gender
+const avatar = (seed: string, gender: string = 'male') => {
+  const style = gender === 'female' ? 'avataaars' : 'avataaars';
+  const hairOptions = gender === 'female' 
+    ? 'hairColor=BrownDark,Black,Blonde,Brown&top=LongHairStraight,LongHairCurly,LongHairBun'
+    : 'hairColor=BrownDark,Black,Brown&top=ShortHairShortFlat,ShortHairShortWaved,ShortHairDreads01';
+  return `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}&${hairOptions}`;
+};
 
 // Initialize default admin if no users exist
 async function initializeDefaultAdmin() {
   try {
     const existingUsers = await db.select().from(users).limit(1);
     if (existingUsers.length === 0) {
-      const adminUsername = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
-      const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password';
-      const adminEmail = process.env.DEFAULT_ADMIN_EMAIL || 'admin@sierraedge.ai';
-
-      const hashedPassword = await bcrypt.hash(adminPassword, 10);
+      const hashedPassword = await bcrypt.hash('admin123', 10);
 
       await db.insert(users).values({
-        username: adminUsername,
+        username: 'admin',
         password: hashedPassword,
         name: 'Administrator',
-        email: adminEmail,
+        email: 'admin@pinnacle.ai',
         role: 'admin',
         status: 'online',
-        mustChangePassword: true,
-        avatar: avatar(adminUsername),
+        gender: 'male',
+        mustChangePassword: false,
+        avatar: avatar('admin', 'male'),
       });
 
-      console.log(`✅ Default admin created: ${adminEmail} (password must be changed on first login)`);
+      console.log('✅ Default admin created: admin@pinnacle.ai / admin123');
     }
   } catch (error: any) {
-    // Table might not exist yet on first run, that's OK
     if (!error.message?.includes('does not exist')) {
       console.error('Error initializing default admin:', error.message);
     }
@@ -194,10 +195,25 @@ export class DatabaseStorage implements IStorage {
   // Auth methods
   async authenticateUser(email: string, password: string): Promise<User | null> {
     try {
-      const user = await db.select().from(users).where(eq(users.email, email)).limit(1);
-      if (user.length === 0) return null;
+      console.log('Attempting login with:', email);
       
+      // Try to find user by email OR username
+      let user = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      
+      // If not found by email, try username
+      if (user.length === 0) {
+        user = await db.select().from(users).where(eq(users.username, email)).limit(1);
+      }
+      
+      if (user.length === 0) {
+        console.log('User not found');
+        return null;
+      }
+      
+      console.log('User found:', user[0].email, 'Checking password...');
       const isValid = await bcrypt.compare(password, user[0].password);
+      console.log('Password valid:', isValid);
+      
       if (!isValid) return null;
       
       return user[0];
@@ -209,9 +225,12 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const gender = userData.gender || 'male';
     const newUser = await db.insert(users).values({
       ...userData,
       password: hashedPassword,
+      avatar: userData.avatar || avatar(userData.name, gender),
+      gender,
     }).returning();
     return newUser[0];
   }
@@ -264,7 +283,8 @@ export class DatabaseStorage implements IStorage {
         id: user.id,
         name: user.name,
         email: user.email,
-        avatar: user.avatar || avatar(user.name),
+        avatar: user.avatar || avatar(user.name, user.gender || 'male'),
+        gender: user.gender,
         role: user.role as "admin" | "manager" | "member",
         status: user.status as "online" | "away" | "busy" | "offline",
         workload: 0,
@@ -284,7 +304,8 @@ export class DatabaseStorage implements IStorage {
         id: user[0].id,
         name: user[0].name,
         email: user[0].email,
-        avatar: user[0].avatar || avatar(user[0].name),
+        avatar: user[0].avatar || avatar(user[0].name, user[0].gender || 'male'),
+        gender: user[0].gender,
         role: user[0].role as "admin" | "manager" | "member",
         status: user[0].status as "online" | "away" | "busy" | "offline",
         workload: 0,
@@ -313,7 +334,8 @@ export class DatabaseStorage implements IStorage {
         id: user.id,
         name: user.name,
         email: user.email,
-        avatar: user.avatar || avatar(user.name),
+        avatar: user.avatar || avatar(user.name, user.gender || 'male'),
+        gender: user.gender,
         role: user.role as "admin" | "manager" | "member",
         status: user.status as "online" | "away" | "busy" | "offline",
         workload: 0,
@@ -463,15 +485,24 @@ export class DatabaseStorage implements IStorage {
       // Get all tasks for this project
       const projectTasks = await db.select().from(tasks).where(eq(tasks.projectId, id));
       
-      // Delete task updates for all project tasks
+      // Delete in correct order to handle foreign key constraints
       for (const task of projectTasks) {
+        // Delete task assignees first
+        await db.delete(taskAssignees).where(eq(taskAssignees.taskId, task.id));
+        // Delete task updates
         await db.delete(taskUpdates).where(eq(taskUpdates.taskId, task.id));
+        // Delete subtasks
+        await db.delete(subtasks).where(eq(subtasks.taskId, task.id));
+        // Delete comments
+        await db.delete(comments).where(eq(comments.taskId, task.id));
       }
       
-      // Delete all project-related records in correct order
+      // Delete all project-related records
       await db.delete(tasks).where(eq(tasks.projectId, id));
       await db.delete(issues).where(eq(issues.projectId, id));
       await db.delete(activities).where(eq(activities.projectId, id));
+      await db.delete(documents).where(eq(documents.projectId, id));
+      await db.delete(folders).where(eq(folders.projectId, id));
       const result = await db.delete(projects).where(eq(projects.id, id)).returning();
       
       return result.length > 0;

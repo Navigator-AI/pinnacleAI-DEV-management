@@ -1,3 +1,0 @@
--- Clean database - no sample data
--- All data will be created through the application interface
--- Only users are pre-populated in init-complete.sql

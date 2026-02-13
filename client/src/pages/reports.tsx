@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
   TrendingUp,
@@ -34,6 +35,19 @@ const reportTypes = [
 
 export default function ReportsPage() {
   const { toast } = useToast();
+
+  // Fetch reports data
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['/api/reports/stats'],
+  });
+
+  const { data: taskTrend } = useQuery({
+    queryKey: ['/api/reports/task-completion-trend'],
+  });
+
+  const { data: workload } = useQuery({
+    queryKey: ['/api/reports/workload-distribution'],
+  });
 
   const handleExportReport = () => {
     toast({
@@ -98,8 +112,8 @@ export default function ReportsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Projects Health</p>
-                  <p className="text-2xl font-bold">0%</p>
-                  <p className="text-xs text-muted-foreground">No projects available</p>
+                  <p className="text-2xl font-bold">{isLoading ? '...' : `${stats?.projectHealth || 0}%`}</p>
+                  <p className="text-xs text-muted-foreground">{stats?.totalProjects || 0} total projects</p>
                 </div>
                 <div className="rounded-md bg-primary/10 p-2">
                   <TrendingUp className="h-5 w-5 text-primary" />
@@ -113,8 +127,8 @@ export default function ReportsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Task Completion</p>
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-xs text-muted-foreground">No tasks completed</p>
+                  <p className="text-2xl font-bold">{isLoading ? '...' : stats?.taskCompletion || 0}</p>
+                  <p className="text-xs text-muted-foreground">{stats?.totalTasks || 0} total tasks</p>
                 </div>
                 <div className="rounded-md bg-emerald-100 dark:bg-emerald-900/30 p-2">
                   <BarChart3 className="h-5 w-5 text-emerald-500" />
@@ -128,8 +142,8 @@ export default function ReportsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Team Efficiency</p>
-                  <p className="text-2xl font-bold">0%</p>
-                  <p className="text-xs text-muted-foreground">No data available</p>
+                  <p className="text-2xl font-bold">{isLoading ? '...' : `${stats?.teamEfficiency || 0}%`}</p>
+                  <p className="text-xs text-muted-foreground">{stats?.totalTeamMembers || 0} team members</p>
                 </div>
                 <div className="rounded-md bg-amber-100 dark:bg-amber-900/30 p-2">
                   <Users className="h-5 w-5 text-amber-500" />

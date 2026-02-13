@@ -34,6 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { ProgressRing } from "@/components/progress-ring";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
+import { EditProjectDialog } from "@/components/edit-project-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, ProjectWithDetails } from "@shared/schema";
 
@@ -42,6 +43,7 @@ type ViewMode = "grid" | "list";
 function ProjectGridCard({ project, queryClient, userRole }: { project: ProjectWithDetails; queryClient: any; userRole: string }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const canEdit = userRole === 'admin' || userRole === 'manager';
   const canDelete = userRole === 'admin';
@@ -55,13 +57,7 @@ function ProjectGridCard({ project, queryClient, userRole }: { project: ProjectW
       });
       return;
     }
-    const newName = prompt("Enter new project name:", project.name);
-    if (newName && newName !== project.name) {
-      toast({
-        title: "Project Updated",
-        description: `Project name would be updated to: ${newName}`,
-      });
-    }
+    setEditDialogOpen(true);
   };
 
   const handleViewDetails = () => {
@@ -108,9 +104,10 @@ function ProjectGridCard({ project, queryClient, userRole }: { project: ProjectW
     }
   };
   return (
-    <Link href={`/projects/${project.id}`}>
-      <Card className="hover-elevate cursor-pointer h-full">
-        <CardContent className="p-5">
+    <>
+      <Link href={`/projects/${project.id}`}>
+        <Card className="hover-elevate cursor-pointer h-full">
+          <CardContent className="p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="flex-1 min-w-0">
               <h3
@@ -180,6 +177,12 @@ function ProjectGridCard({ project, queryClient, userRole }: { project: ProjectW
         </CardContent>
       </Card>
     </Link>
+    <EditProjectDialog
+      project={project}
+      open={editDialogOpen}
+      onOpenChange={setEditDialogOpen}
+    />
+    </>
   );
 }
 
@@ -187,6 +190,7 @@ function ProjectTableRow({ project, userRole }: { project: ProjectWithDetails; u
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const canEdit = userRole === 'admin' || userRole === 'manager';
   const canDelete = userRole === 'admin';
@@ -200,13 +204,7 @@ function ProjectTableRow({ project, userRole }: { project: ProjectWithDetails; u
       });
       return;
     }
-    const newName = prompt("Enter new project name:", project.name);
-    if (newName && newName !== project.name) {
-      toast({
-        title: "Project Updated",
-        description: `Project name would be updated to: ${newName}`,
-      });
-    }
+    setEditDialogOpen(true);
   };
 
   const handleViewDetails = () => {
@@ -327,6 +325,11 @@ function ProjectTableRow({ project, userRole }: { project: ProjectWithDetails; u
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         )}
+        <EditProjectDialog
+          project={project}
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+        />
       </TableCell>
     </TableRow>
   );

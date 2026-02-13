@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,11 +8,50 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export default function ProfilePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const [showAvatarDialog, setShowAvatarDialog] = useState(false);
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
+  const [selectedAvatar, setSelectedAvatar] = useState('');
+  
+  // Fetch full user data
+  const { data: userData } = useQuery({
+    queryKey: [`/api/users/${user.id}`],
+    enabled: Boolean(user?.id),
+  });
+
+  const maleAvatars = [
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=John&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=David&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=James&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Robert&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=William&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Richard&gender=male',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Thomas&gender=male',
+  ];
+  
+  const femaleAvatars = [
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Emma&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Olivia&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophia&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Isabella&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mia&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlotte&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Amelia&gender=female',
+    'https://api.dicebear.com/7.x/avataaars/svg?seed=Harper&gender=female',
+  ];
   
   const [formData, setFormData] = useState({
     name: user.name || '',
@@ -22,6 +61,38 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: ''
   });
+
+  const updateAvatarMutation = useMutation({
+    mutationFn: async (data: { avatar: string; gender: string }) => {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update avatar');
+      return response.json();
+    },
+    onSuccess: (updatedUser) => {
+      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+      const newUser = { ...currentUser, avatar: updatedUser.avatar };
+      sessionStorage.setItem('user', JSON.stringify(newUser));
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/team'] });
+      setShowAvatarDialog(false);
+      toast({
+        title: "Avatar Updated",
+        description: "Your avatar has been updated successfully.",
+      });
+      // Refresh page to show new avatar
+      setTimeout(() => window.location.reload(), 500);
+    },
+  });
+
+  const handleAvatarChange = () => {
+    if (selectedAvatar) {
+      updateAvatarMutation.mutate({ avatar: selectedAvatar, gender: selectedGender });
+    }
+  };
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: { name: string; email: string }) => {
@@ -134,17 +205,17 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} />
+                  <AvatarImage src={userData?.avatar || user.avatar} />
                   <AvatarFallback className="text-lg">
                     {user.name?.split(' ').map((n: string) => n[0]).join('')}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" onClick={() => setShowAvatarDialog(true)}>
                     Change Avatar
                   </Button>
                   <p className="text-xs text-muted-foreground mt-1">
-                    JPG, GIF or PNG. 1MB max.
+                    Choose from available avatars
                   </p>
                 </div>
               </div>
@@ -244,6 +315,57 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* Avatar Selection Dialog */}
+      <Dialog open={showAvatarDialog} onOpenChange={setShowAvatarDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Choose Your Avatar</DialogTitle>
+            <DialogDescription>
+              Select a gender and choose an avatar that represents you
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <RadioGroup value={selectedGender} onValueChange={(v) => setSelectedGender(v as 'male' | 'female')}>
+              <div className="flex gap-4">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="male" id="male" />
+                  <Label htmlFor="male">Male</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="female" id="female" />
+                  <Label htmlFor="female">Female</Label>
+                </div>
+              </div>
+            </RadioGroup>
+            <div className="grid grid-cols-4 gap-4 max-h-96 overflow-y-auto">
+              {(selectedGender === 'male' ? maleAvatars : femaleAvatars).map((avatar, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedAvatar(avatar)}
+                  className={`p-2 rounded-lg border-2 transition-all ${
+                    selectedAvatar === avatar
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <Avatar className="h-16 w-16 mx-auto">
+                    <AvatarImage src={avatar} />
+                  </Avatar>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowAvatarDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAvatarChange} disabled={!selectedAvatar || updateAvatarMutation.isPending}>
+                {updateAvatarMutation.isPending ? 'Saving...' : 'Save Avatar'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

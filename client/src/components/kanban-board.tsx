@@ -168,15 +168,31 @@ function KanbanCard({ task, onStatusChange }: { task: TaskWithDetails; onStatusC
                 )}
               </div>
 
-              {/* Assignee */}
-              {task.assigneeName && (
+              {/* Assignees */}
+              {task.assignees && task.assignees.length > 0 ? (
+                <div className="flex items-center -space-x-2">
+                  {task.assignees.slice(0, 2).map((assignee) => (
+                    <Avatar key={assignee.id} className="h-6 w-6 border-2 border-background">
+                      <AvatarImage src={assignee.avatar} />
+                      <AvatarFallback className="text-xs">
+                        {assignee.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {task.assignees.length > 2 && (
+                    <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium border-2 border-background">
+                      +{task.assignees.length - 2}
+                    </div>
+                  )}
+                </div>
+              ) : task.assigneeName ? (
                 <Avatar className="h-6 w-6">
                   <AvatarImage src={task.assigneeAvatar} />
                   <AvatarFallback className="text-xs">
                     {task.assigneeName.charAt(0)}
                   </AvatarFallback>
                 </Avatar>
-              )}
+              ) : null}
             </div>
           </CardContent>
         </Card>

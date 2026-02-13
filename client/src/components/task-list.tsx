@@ -337,7 +337,26 @@ export function TaskList({
                     )}
                   </TableCell>
                   <TableCell>
-                    {task.assigneeName ? (
+                    {task.assignees && task.assignees.length > 0 ? (
+                      <div className="flex items-center gap-1">
+                        {task.assignees.slice(0, 3).map((assignee, idx) => (
+                          <Avatar key={assignee.id} className="h-6 w-6 border-2 border-background" style={{ marginLeft: idx > 0 ? '-8px' : '0' }}>
+                            <AvatarImage src={assignee.avatar} />
+                            <AvatarFallback className="text-xs">
+                              {assignee.name.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                        ))}
+                        {task.assignees.length > 3 && (
+                          <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium" style={{ marginLeft: '-8px' }}>
+                            +{task.assignees.length - 3}
+                          </div>
+                        )}
+                        {task.assignees.length === 1 && (
+                          <span className="text-sm ml-1">{task.assignees[0].name}</span>
+                        )}
+                      </div>
+                    ) : task.assigneeName ? (
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
                           <AvatarImage src={task.assigneeAvatar} />
