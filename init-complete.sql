@@ -161,5 +161,27 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Create calendar_events table
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    title TEXT NOT NULL,
+    description TEXT,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    all_day BOOLEAN DEFAULT false,
+    location TEXT,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    type TEXT NOT NULL DEFAULT 'event',
+    color TEXT DEFAULT '#3b82f6',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes for calendar_events
+CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_project_id ON calendar_events(project_id);
+
 -- Success message
 SELECT 'Database tables created successfully. Default admin will be created on first application startup.' as message;

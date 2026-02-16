@@ -25,6 +25,7 @@ import IssueDetailPage from "@/pages/issue-detail";
 import NotificationsPage from "@/pages/notifications";
 import ProfilePage from "@/pages/profile";
 import LoginPage from "@/pages/login";
+import CalendarPage from "@/pages/calendar";
 
 interface User {
   id: string;
@@ -46,6 +47,7 @@ function AuthenticatedRouter({ user }: { user: User }) {
       <Route path="/kanban" component={KanbanPage} />
       <Route path="/issues" component={IssuesPage} />
       <Route path="/issues/:id" component={IssueDetailPage} />
+      <Route path="/calendar" component={CalendarPage} />
       {/* Admin and Manager can see reports */}
       {(user.role === 'admin' || user.role === 'manager') && (
         <Route path="/reports" component={ReportsPage} />

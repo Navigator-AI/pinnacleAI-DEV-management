@@ -364,6 +364,27 @@ export interface DashboardStats {
   upcomingMilestones: number;
 }
 
+// Calendar Events table
+export const calendarEvents = pgTable("calendar_events", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  allDay: boolean("all_day").default(false),
+  location: text("location"),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  projectId: uuid("project_id").references(() => projects.id),
+  type: text("type").notNull().default("event"), // event, meeting, task, reminder
+  color: text("color").default("#3b82f6"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents);
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+
 // API Response types
 export interface ApiResponse<T> {
   success: boolean;

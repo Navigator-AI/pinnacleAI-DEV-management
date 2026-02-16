@@ -19,6 +19,7 @@ import {
   documents,
   notifications,
   taskAssignees,
+  calendarEvents,
   type User,
   type Project,
   type Task,
@@ -45,6 +46,8 @@ import {
   type InsertDocument,
   type TaskAssignee,
   type InsertTaskAssignee,
+  type CalendarEvent,
+  type InsertCalendarEvent,
 } from "@shared/schema";
 
 // Database connection - PostgreSQL only
@@ -189,6 +192,13 @@ export interface IStorage {
   addTaskAssignee(taskId: string, userId: string, assignedBy?: string): Promise<TaskAssignee>;
   removeTaskAssignee(taskId: string, userId: string): Promise<boolean>;
   setTaskAssignees(taskId: string, userIds: string[], assignedBy?: string): Promise<void>;
+
+  // Calendar Events
+  getCalendarEvents(userId: string): Promise<CalendarEvent[]>;
+  getCalendarEvent(id: string, userId: string): Promise<CalendarEvent | undefined>;
+  createCalendarEvent(eventData: InsertCalendarEvent): Promise<CalendarEvent>;
+  updateCalendarEvent(id: string, updates: Partial<CalendarEvent>, userId: string): Promise<CalendarEvent | null>;
+  deleteCalendarEvent(id: string, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1276,6 +1286,101 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Set task assignees error:', error);
       throw error;
+    }
+  }
+
+  // Calendar Events
+  async getCalendarEvents(userId: string): Promise<CalendarEvent[]> {
+    try {
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (user.length === 0) return [];
+
+      // Admin can see all events, others only see their own
+      if (user[0].role === 'admin') {
+        return await db.select().from(calendarEvents).orderBy(calendarEvents.startTime);
+      } else {
+        return await db.select().from(calendarEvents).where(eq(calendarEvents.userId, userId)).orderBy(calendarEvents.startTime);
+      }
+    } catch (error) {
+      console.error('Get calendar events error:', error);
+      return [];
+    }
+  }
+
+  async getCalendarEvent(id: string, userId: string): Promise<CalendarEvent | undefined> {
+    try {
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (user.length === 0) return undefined;
+
+      let query = db.select().from(calendarEvents).where(eq(calendarEvents.id, id));
+      
+      // Non-admin users can only see their own events
+      if (user[0].role !== 'admin') {
+        query = query.where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)));
+      }
+
+      const result = await query.limit(1);
+      return result[0];
+    } catch (error) {
+      console.error('Get calendar event error:', error);
+      return undefined;
+    }
+  }
+
+  async createCalendarEvent(eventData: InsertCalendarEvent): Promise<CalendarEvent> {
+    const processedData = {
+      ...eventData,
+      startTime: new Date(eventData.startTime),
+      endTime: new Date(eventData.endTime),
+    };
+    const newEvent = await db.insert(calendarEvents).values(processedData).returning();
+    return newEvent[0];
+  }
+
+  async updateCalendarEvent(id: string, updates: Partial<CalendarEvent>, userId: string): Promise<CalendarEvent | null> {
+    try {
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (user.length === 0) return null;
+
+      const processedUpdates = {
+        ...updates,
+        startTime: updates.startTime ? new Date(updates.startTime) : updates.startTime,
+        endTime: updates.endTime ? new Date(updates.endTime) : updates.endTime,
+        updatedAt: new Date(),
+      };
+
+      let query = db.update(calendarEvents).set(processedUpdates).where(eq(calendarEvents.id, id));
+      
+      // Non-admin users can only update their own events
+      if (user[0].role !== 'admin') {
+        query = query.where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)));
+      }
+
+      const updated = await query.returning();
+      return updated.length > 0 ? updated[0] : null;
+    } catch (error) {
+      console.error('Update calendar event error:', error);
+      return null;
+    }
+  }
+
+  async deleteCalendarEvent(id: string, userId: string): Promise<boolean> {
+    try {
+      const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (user.length === 0) return false;
+
+      let query = db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+      
+      // Non-admin users can only delete their own events
+      if (user[0].role !== 'admin') {
+        query = query.where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)));
+      }
+
+      const result = await query.returning();
+      return result.length > 0;
+    } catch (error) {
+      console.error('Delete calendar event error:', error);
+      return false;
     }
   }
 }

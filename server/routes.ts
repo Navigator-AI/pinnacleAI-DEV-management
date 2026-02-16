@@ -4,7 +4,7 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { storage } from "./storage";
-import { loginSchema, taskUpdateSchema, issueUpdateSchema, insertUserSchema, insertTaskUpdateSchema, insertSubtaskSchema, insertCommentSchema, insertFolderSchema, insertDocumentSchema } from "@shared/schema";
+import { loginSchema, taskUpdateSchema, issueUpdateSchema, insertUserSchema, insertTaskUpdateSchema, insertSubtaskSchema, insertCommentSchema, insertFolderSchema, insertDocumentSchema, insertCalendarEventSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -1265,6 +1265,74 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
+  // Calendar Events
+  app.get("/api/calendar/events", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const events = await storage.getCalendarEvents(userId);
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get calendar events" });
+    }
+  });
+
+  app.get("/api/calendar/events/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const event = await storage.getCalendarEvent(req.params.id, userId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get calendar event" });
+    }
+  });
+
+  app.post("/api/calendar/events", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const eventData = insertCalendarEventSchema.parse({
+        ...req.body,
+        userId: userId
+      });
+      const event = await storage.createCalendarEvent(eventData);
+      res.status(201).json(event);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid input', details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create calendar event" });
+      }
+    }
+  });
+
+  app.put("/api/calendar/events/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const event = await storage.updateCalendarEvent(req.params.id, req.body, userId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update calendar event" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const success = await storage.deleteCalendarEvent(req.params.id, userId);
+      if (!success) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete calendar event" });
     }
   });
 
