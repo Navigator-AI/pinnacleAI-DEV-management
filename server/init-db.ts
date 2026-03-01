@@ -34,34 +34,9 @@ export async function initializeDatabase() {
       status: "online"
     });
 
-    // Create sample users for testing
-    const userPassword = await bcrypt.hash("user123", 10);
-    await db.insert(users).values([
-      {
-        username: "john_doe",
-        password: userPassword,
-        name: "John Doe",
-        email: "john@pinnacle.ai",
-        role: "member",
-        avatar: avatar("john"),
-        status: "online"
-      },
-      {
-        username: "jane_smith",
-        password: userPassword,
-        name: "Jane Smith",
-        email: "jane@pinnacle.ai",
-        role: "manager",
-        avatar: avatar("jane"),
-        status: "away"
-      }
-    ]);
-
     console.log("Database initialized successfully!");
     console.log("Login credentials:");
     console.log("Admin: admin@pinnacle.ai / admin123");
-    console.log("User: john@pinnacle.ai / user123");
-    console.log("Manager: jane@pinnacle.ai / user123");
 
     await client.end();
   } catch (error) {

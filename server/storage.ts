@@ -386,7 +386,16 @@ export class DatabaseStorage implements IStorage {
       if (userId) {
         const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (user.length > 0 && user[0].role !== 'admin') {
-          query = query.where(eq(projects.ownerId, userId));
+          query = query.where(sql`(
+            ${projects.ownerId} = ${userId}
+            OR ${projects.id} IN (
+              SELECT DISTINCT ${tasks.projectId}
+              FROM ${tasks}
+              LEFT JOIN ${taskAssignees} ON ${taskAssignees.taskId} = ${tasks.id}
+              WHERE ${tasks.projectId} IS NOT NULL
+                AND (${tasks.assigneeId} = ${userId} OR ${taskAssignees.userId} = ${userId})
+            )
+          )`);
         }
       }
       
@@ -416,17 +425,31 @@ export class DatabaseStorage implements IStorage {
 
   async getProject(id: string, userId?: string): Promise<ProjectWithDetails | undefined> {
     try {
-      let query = db.select({
-        project: projects,
-        owner: users,
-      }).from(projects).leftJoin(users, eq(projects.ownerId, users.id)).where(eq(projects.id, id));
-      
+      let projectFilter: any = eq(projects.id, id);
+
       if (userId) {
         const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (user.length > 0 && user[0].role !== 'admin') {
-          query = query.where(and(eq(projects.id, id), eq(projects.ownerId, userId)));
+          projectFilter = and(
+            eq(projects.id, id),
+            sql`(
+              ${projects.ownerId} = ${userId}
+              OR ${projects.id} IN (
+                SELECT DISTINCT ${tasks.projectId}
+                FROM ${tasks}
+                LEFT JOIN ${taskAssignees} ON ${taskAssignees.taskId} = ${tasks.id}
+                WHERE ${tasks.projectId} IS NOT NULL
+                  AND (${tasks.assigneeId} = ${userId} OR ${taskAssignees.userId} = ${userId})
+              )
+            )`
+          );
         }
       }
+
+      let query = db.select({
+        project: projects,
+        owner: users,
+      }).from(projects).leftJoin(users, eq(projects.ownerId, users.id)).where(projectFilter);
       
       const result = await query.limit(1);
       if (result.length === 0) return undefined;
@@ -779,10 +802,31 @@ export class DatabaseStorage implements IStorage {
           return false;
         }
       }
-      
+
+      const taskToDelete = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+      const taskTitle = taskToDelete[0]?.title;
+
       // Delete in correct order to handle foreign key constraints
+      await db.delete(taskAssignees).where(eq(taskAssignees.taskId, id));
       await db.delete(taskUpdates).where(eq(taskUpdates.taskId, id));
-      await db.delete(activities).where(and(eq(activities.targetType, 'task'), eq(activities.target, id)));
+      await db.delete(subtasks).where(eq(subtasks.taskId, id));
+      await db.delete(comments).where(eq(comments.taskId, id));
+
+      if (taskTitle) {
+        await db.delete(activities).where(
+          and(
+            eq(activities.targetType, 'task'),
+            eq(activities.target, taskTitle),
+          )
+        );
+      }
+
+      await db.delete(activities).where(
+        and(
+          eq(activities.targetType, 'task'),
+          eq(activities.target, id),
+        )
+      );
       const result = await db.delete(tasks).where(eq(tasks.id, id)).returning();
       
       return result.length > 0;

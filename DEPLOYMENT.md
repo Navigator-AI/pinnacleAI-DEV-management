@@ -32,8 +32,6 @@ chmod +x deploy.sh
 
 - **URL:** http://localhost:7855
 - **Admin:** admin@pinnacle.ai / admin123
-- **Manager:** jane@pinnacle.ai / user123
-- **Member:** john@pinnacle.ai / user123
 
 ## ✅ Features Working
 

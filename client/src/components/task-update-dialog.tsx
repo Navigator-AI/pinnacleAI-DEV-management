@@ -29,6 +29,8 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState("");
   const [progress, setProgress] = useState(task.progress || 0);
+  const user = JSON.parse(sessionStorage.getItem("user") || "{}");
+  const isAdminViewOnly = user?.role === "admin";
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -63,6 +65,7 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAdminViewOnly) return;
     if (!content.trim()) return;
     updateMutation.mutate({ content, progress });
   };
@@ -86,31 +89,33 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex flex-col gap-6 py-4">
-          <form id="task-update-form" onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="progress">Current Progress ({progress}%)</Label>
-              <Slider
-                id="progress"
-                value={[progress]}
-                max={100}
-                step={5}
-                onValueChange={(vals) => setProgress(vals[0])}
-                className="py-4"
-              />
-            </div>
+          {!isAdminViewOnly && (
+            <form id="task-update-form" onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="progress">Current Progress ({progress}%)</Label>
+                <Slider
+                  id="progress"
+                  value={[progress]}
+                  max={100}
+                  step={5}
+                  onValueChange={(vals) => setProgress(vals[0])}
+                  className="py-4"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="content">Progress Notes</Label>
-              <Textarea
-                id="content"
-                placeholder="What did you accomplish today? Any blockers?"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[100px]"
-                required
-              />
-            </div>
-          </form>
+              <div className="space-y-2">
+                <Label htmlFor="content">Progress Notes</Label>
+                <Textarea
+                  id="content"
+                  placeholder="What did you accomplish today? Any blockers?"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  className="min-h-[100px]"
+                  required
+                />
+              </div>
+            </form>
+          )}
 
           <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -154,13 +159,15 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button 
-            type="submit" 
-            form="task-update-form" 
-            disabled={updateMutation.isPending || !content.trim()}
-          >
-            {updateMutation.isPending ? "Saving..." : "Save Update"}
-          </Button>
+          {!isAdminViewOnly && (
+            <Button 
+              type="submit" 
+              form="task-update-form" 
+              disabled={updateMutation.isPending || !content.trim()}
+            >
+              {updateMutation.isPending ? "Saving..." : "Save Update"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

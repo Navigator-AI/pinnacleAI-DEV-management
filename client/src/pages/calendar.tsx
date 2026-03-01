@@ -130,6 +130,15 @@ export default function CalendarPage() {
     });
   };
 
+  const formatDateForInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const selectedOrToday = selectedDate ?? new Date();
+
   const isToday = (date: Date | null) => {
     if (!date) return false;
     const today = new Date();
@@ -261,7 +270,7 @@ export default function CalendarPage() {
                   id="startDate"
                   name="startDate"
                   type="date"
-                  defaultValue={selectedDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0]}
+                  defaultValue={formatDateForInput(selectedOrToday)}
                   required
                 />
               </div>
@@ -278,7 +287,7 @@ export default function CalendarPage() {
                   id="endDate"
                   name="endDate"
                   type="date"
-                  defaultValue={selectedDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0]}
+                  defaultValue={formatDateForInput(selectedOrToday)}
                   required
                 />
               </div>

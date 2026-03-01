@@ -85,14 +85,13 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
   };
 
   // Navigation items based on role hierarchy
-  // All users can see: Home, Projects (view), Tasks, Kanban, Issues, Calendar
+  // All users can see: Home, Projects (view), Tasks, Kanban, Issues
   const mainNavItems = [
     { title: "Home", url: "/", icon: Home },
     { title: "Projects", url: "/projects", icon: FolderKanban, badge: projectCount > 0 ? projectCount : undefined },
     { title: "Tasks", url: "/tasks", icon: CheckSquare, badge: taskCount > 0 ? taskCount : undefined },
     { title: "Kanban", url: "/kanban", icon: LayoutGrid },
     { title: "Issues", url: "/issues", icon: Bug, badge: issueCount > 0 ? issueCount : undefined },
-    { title: "Calendar", url: "/calendar", icon: Calendar },
   ];
 
   // Management items based on role
@@ -101,12 +100,15 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
   // Member: Settings only
   const managementItems = user.role === 'admin' ? [
     { title: "Reports", url: "/reports", icon: BarChart3 },
+    { title: "Calendar", url: "/calendar", icon: Calendar },
     { title: "Team", url: "/team", icon: Users },
     { title: "Settings", url: "/settings", icon: Settings },
   ] : user.role === 'manager' ? [
     { title: "Reports", url: "/reports", icon: BarChart3 },
+    { title: "Calendar", url: "/calendar", icon: Calendar },
     { title: "Settings", url: "/settings", icon: Settings },
   ] : [
+    { title: "Calendar", url: "/calendar", icon: Calendar },
     { title: "Settings", url: "/settings", icon: Settings },
   ];
 
