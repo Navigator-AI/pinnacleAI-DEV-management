@@ -14,7 +14,7 @@ services:
       - ./init-complete.sql:/docker-entrypoint-initdb.d/init-complete.sql
     networks:
       - pinnacle-network
-    restart: unless-stopped
+    restart: always
 
   # Pinnacle AI Application
   app:
@@ -38,7 +38,7 @@ services:
       - postgres
     networks:
       - pinnacle-network
-    restart: unless-stopped
+    restart: always
     volumes:
       - ./data:/app/data
 
