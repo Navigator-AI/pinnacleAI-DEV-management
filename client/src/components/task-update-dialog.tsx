@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Dialog, 
@@ -28,7 +28,8 @@ interface TaskUpdateDialogProps {
 export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState("");
-  const [progress, setProgress] = useState(task.progress || 0);
+  const currentTaskProgress = task.progress || 0;
+  const [progress, setProgress] = useState(currentTaskProgress);
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   const isAdminViewOnly = user?.role === "admin";
   const { toast } = useToast();
@@ -39,8 +40,14 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
     enabled: open,
   });
 
+  useEffect(() => {
+    if (open) {
+      setProgress(currentTaskProgress);
+    }
+  }, [open, currentTaskProgress]);
+
   const updateMutation = useMutation({
-    mutationFn: async (data: { content: string; progress: number }) => {
+    mutationFn: async (data: { content: string; progress?: number }) => {
       const res = await apiRequest("POST", `/api/tasks/${task.id}/updates`, data);
       return res.json();
     },
@@ -67,7 +74,11 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
     e.preventDefault();
     if (isAdminViewOnly) return;
     if (!content.trim()) return;
-    updateMutation.mutate({ content, progress });
+    const payload: { content: string; progress?: number } = { content };
+    if (progress !== currentTaskProgress) {
+      payload.progress = progress;
+    }
+    updateMutation.mutate(payload);
   };
 
   return (
@@ -134,7 +145,9 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
                     <div key={update.id} className="text-sm space-y-1 pb-3 border-b last:border-0">
                       <div className="flex justify-between items-start">
                         <span className="font-medium text-xs bg-muted px-1.5 py-0.5 rounded">
-                          {update.progress}% Complete
+                          {update.progress !== null && update.progress !== undefined
+                            ? `${update.progress}% Complete`
+                            : "Progress unchanged"}
                         </span>
                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                           <Calendar className="h-3 w-3" />

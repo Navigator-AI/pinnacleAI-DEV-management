@@ -342,19 +342,8 @@ export function TaskDialog({ task, projectId, onSuccess, trigger, open: controll
                         />
                       </div>
                     </div>
-                    <div className="grid gap-2">
-                      <div className="flex justify-between">
-                        <Label htmlFor="progress">Progress ({formData.progress}%)</Label>
-                      </div>
-                      <Input
-                        id="progress"
-                        type="range"
-                        min="0"
-                        max="100"
-                        step="5"
-                        value={formData.progress}
-                        onChange={(e) => setFormData({ ...formData, progress: parseInt(e.target.value) })}
-                      />
+                    <div className="text-xs text-muted-foreground">
+                      Progress is updated by assigned members through Daily Update only.
                     </div>
                   </div>
                   <DialogFooter>

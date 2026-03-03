@@ -26,11 +26,14 @@ services:
       - PORT=7855
       - HOST=0.0.0.0
       - NODE_ENV=production
+      - DAILY_REPORT_TIMEZONE=Asia/Kolkata
+      - DAILY_REPORT_SEND_TIME=22:00
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
       - DEFAULT_ADMIN_USERNAME=admin
       - DEFAULT_ADMIN_PASSWORD=password
       - DEFAULT_ADMIN_EMAIL=admin@pinnacle.ai
     ports:
-      - "[::]:7855:7855"
+      - "0.0.0.0:7855:7855"
     depends_on:
       - postgres
     networks:

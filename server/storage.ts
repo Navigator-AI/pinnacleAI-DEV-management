@@ -155,6 +155,8 @@ export interface IStorage {
   getActivities(userId?: string): Promise<ActivityWithDetails[]>;
   getActivitiesByProject(projectId: string, userId?: string): Promise<ActivityWithDetails[]>;
   createActivity(activityData: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity>;
+  hasDailyReportBeenSent(reportDate: string): Promise<boolean>;
+  markDailyReportSent(reportDate: string): Promise<void>;
 
   // Issues
   getIssues(userId?: string): Promise<IssueWithDetails[]>;
@@ -293,6 +295,7 @@ export class DatabaseStorage implements IStorage {
         id: user.id,
         name: user.name,
         email: user.email,
+        teamsUsername: user.teamsUsername || undefined,
         avatar: user.avatar || avatar(user.name, user.gender || 'male'),
         gender: user.gender,
         role: user.role as "admin" | "manager" | "member",
@@ -314,6 +317,7 @@ export class DatabaseStorage implements IStorage {
         id: user[0].id,
         name: user[0].name,
         email: user[0].email,
+        teamsUsername: user[0].teamsUsername || undefined,
         avatar: user[0].avatar || avatar(user[0].name, user[0].gender || 'male'),
         gender: user[0].gender,
         role: user[0].role as "admin" | "manager" | "member",
@@ -344,6 +348,7 @@ export class DatabaseStorage implements IStorage {
         id: user.id,
         name: user.name,
         email: user.email,
+        teamsUsername: user.teamsUsername || undefined,
         avatar: user.avatar || avatar(user.name, user.gender || 'male'),
         gender: user.gender,
         role: user.role as "admin" | "manager" | "member",
@@ -358,20 +363,32 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTeamMember(id: string): Promise<boolean> {
     try {
-      // Delete in correct order to handle foreign key constraints
+      const existingUser = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1);
+      if (existingUser.length === 0) {
+        return false;
+      }
+
+      // Delete dependent rows first to satisfy foreign key constraints.
       await db.delete(taskUpdates).where(eq(taskUpdates.userId, id));
+      await db.delete(comments).where(eq(comments.userId, id));
       await db.delete(activities).where(eq(activities.userId, id));
-      
-      // Update tasks and projects to remove references
+      await db.delete(notifications).where(eq(notifications.userId, id));
+      await db.delete(documents).where(eq(documents.uploadedBy, id));
+      await db.delete(calendarEvents).where(eq(calendarEvents.userId, id));
+      await db.delete(taskAssignees).where(eq(taskAssignees.userId, id));
+      await db.delete(taskAssignees).where(eq(taskAssignees.assignedBy, id));
+
+      // Remove nullable references from other tables.
       await db.update(tasks).set({ assigneeId: null }).where(eq(tasks.assigneeId, id));
+      await db.update(tasks).set({ createdBy: null }).where(eq(tasks.createdBy, id));
       await db.update(projects).set({ ownerId: null }).where(eq(projects.ownerId, id));
       await db.update(issues).set({ assigneeId: null }).where(eq(issues.assigneeId, id));
-      
+
       const result = await db.delete(users).where(eq(users.id, id)).returning();
       return result.length > 0;
     } catch (error) {
       console.error('Delete team member error:', error);
-      return false;
+      throw error;
     }
   }
 
@@ -1007,6 +1024,36 @@ export class DatabaseStorage implements IStorage {
   async createActivity(activityData: Omit<Activity, 'id' | 'createdAt'>): Promise<Activity> {
     const newActivity = await db.insert(activities).values(activityData).returning();
     return newActivity[0];
+  }
+
+  async hasDailyReportBeenSent(reportDate: string): Promise<boolean> {
+    try {
+      const existing = await db.select({ id: activities.id })
+        .from(activities)
+        .where(
+          and(
+            eq(activities.targetType, "daily_report"),
+            eq(activities.target, reportDate),
+            eq(activities.action, "teams_report_sent"),
+          )
+        )
+        .limit(1);
+
+      return existing.length > 0;
+    } catch (error) {
+      console.error("Daily report sent-check error:", error);
+      return false;
+    }
+  }
+
+  async markDailyReportSent(reportDate: string): Promise<void> {
+    await db.insert(activities).values({
+      projectId: null,
+      userId: null,
+      action: "teams_report_sent",
+      target: reportDate,
+      targetType: "daily_report",
+    });
   }
 
   // Issues

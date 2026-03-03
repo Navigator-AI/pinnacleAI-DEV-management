@@ -380,7 +380,8 @@ export async function registerRoutes(
       }
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete team member" });
+      console.error("Delete team member route error:", error);
+      res.status(500).json({ error: "Failed to delete team member due to related records" });
     }
   });
 
@@ -586,10 +587,10 @@ export async function registerRoutes(
           return res.status(403).json({ error: "You can only update tasks assigned to you" });
         }
 
-        // Members can only update status and progress
+        // Members can only update status here.
+        // Progress is updated only via daily update endpoint.
         const allowedUpdates: any = {};
         if (updates.status) allowedUpdates.status = updates.status;
-        if (updates.progress !== undefined) allowedUpdates.progress = updates.progress;
 
         const task = await storage.updateTask(req.params.id, allowedUpdates, userId);
         if (!task) {
@@ -616,6 +617,8 @@ export async function registerRoutes(
 
       // Remove assigneeIds from storage updates as it's not a direct column
       delete storageUpdates.assigneeIds;
+      // Progress can only be updated by members through daily updates.
+      delete storageUpdates.progress;
 
       const task = await storage.updateTask(req.params.id, storageUpdates as any);
 
@@ -858,7 +861,7 @@ export async function registerRoutes(
       if (userRole !== 'member') {
         return res.status(403).json({ error: "Only team members can add daily updates" });
       }
-      
+
       // Check if task is assigned to this user
       const task = await storage.getTask(req.params.id, userId);
       if (!task) {
