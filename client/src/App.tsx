@@ -32,6 +32,11 @@ interface User {
   name: string;
   email: string;
   role: string;
+  avatar?: string;
+  mustChangePassword?: boolean;
+  teamsNotificationEnabled?: boolean;
+  gender?: string;
+  teamsUsername?: string | null;
 }
 
 function AuthenticatedRouter({ user }: { user: User }) {
@@ -72,25 +77,89 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [location, setLocation] = useLocation();
+  const presenceIdleThresholdMs = 5 * 60 * 1000;
+  const presenceHeartbeatMs = 30 * 1000;
 
   useEffect(() => {
-    // Check for existing user session (only during same browser session)
-    const savedUser = sessionStorage.getItem('user');
-    const savedMustChange = sessionStorage.getItem('mustChangePassword');
-    if (savedUser) {
+    let isMounted = true;
+
+    const syncFromSessionStorage = () => {
+      const savedUser = sessionStorage.getItem('user');
+      const savedMustChange = sessionStorage.getItem('mustChangePassword') === 'true';
+
+      if (!savedUser) {
+        setUser(null);
+        setMustChangePassword(false);
+        sessionStorage.removeItem('mustChangePassword');
+        return;
+      }
+
       try {
         const userData = JSON.parse(savedUser);
         setUser(userData);
-        if (savedMustChange === 'true') {
-          setMustChangePassword(true);
-        }
+        setMustChangePassword(savedMustChange || Boolean(userData.mustChangePassword));
       } catch (error) {
         console.error('Error parsing saved user data:', error);
         sessionStorage.removeItem('user');
         sessionStorage.removeItem('mustChangePassword');
+        setUser(null);
+        setMustChangePassword(false);
       }
-    }
-    setLoading(false);
+    };
+
+    const hydrateUser = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include',
+        });
+
+        if (!isMounted) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data.user);
+          sessionStorage.setItem('user', JSON.stringify(data.user));
+          queryClient.setQueryData(["/api/auth/me"], { user: data.user });
+          if (data.user?.mustChangePassword) {
+            setMustChangePassword(true);
+            sessionStorage.setItem('mustChangePassword', 'true');
+          } else {
+            setMustChangePassword(false);
+            sessionStorage.removeItem('mustChangePassword');
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (response.status === 401) {
+          sessionStorage.removeItem('user');
+          sessionStorage.removeItem('mustChangePassword');
+          queryClient.removeQueries({ queryKey: ["/api/auth/me"] });
+          setUser(null);
+          setMustChangePassword(false);
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to hydrate auth session:', error);
+      }
+
+      syncFromSessionStorage();
+      setLoading(false);
+    };
+
+    const handleUserUpdated = () => {
+      syncFromSessionStorage();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    };
+
+    hydrateUser();
+    window.addEventListener('user-updated', handleUserUpdated);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('user-updated', handleUserUpdated);
+    };
   }, []);
 
   // Handle login success
@@ -98,9 +167,13 @@ function App() {
     console.log('App handleLoginSuccess called with:', userData, 'mustChange:', mustChange);
     setUser(userData);
     sessionStorage.setItem('user', JSON.stringify(userData));
+    queryClient.setQueryData(["/api/auth/me"], { user: userData });
     if (mustChange) {
       setMustChangePassword(true);
       sessionStorage.setItem('mustChangePassword', 'true');
+    } else {
+      setMustChangePassword(false);
+      sessionStorage.removeItem('mustChangePassword');
     }
     console.log('User state updated, should show dashboard now');
   };
@@ -111,13 +184,95 @@ function App() {
     sessionStorage.removeItem('mustChangePassword');
   };
 
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    let active = true;
+    let lastActivityAt = Date.now();
+
+    const markActivity = () => {
+      lastActivityAt = Date.now();
+    };
+
+    const sendHeartbeat = async () => {
+      const status = Date.now() - lastActivityAt >= presenceIdleThresholdMs ? "away" : "online";
+
+      try {
+        const response = await fetch("/api/presence/heartbeat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({ status }),
+        });
+
+        if (!active || !response.ok) {
+          return;
+        }
+      } catch (error) {
+        if (active) {
+          console.error("Presence heartbeat failed:", error);
+        }
+      }
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "focus",
+    ];
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, markActivity);
+    });
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        markActivity();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    markActivity();
+    void sendHeartbeat();
+
+    const interval = window.setInterval(() => {
+      void sendHeartbeat();
+    }, presenceHeartbeatMs);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, markActivity);
+      });
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [user?.id]);
+
   // Handle logout
-  const handleLogout = () => {
-    sessionStorage.removeItem('user');
-    sessionStorage.removeItem('mustChangePassword');
-    setUser(null);
-    setMustChangePassword(false);
-    setLocation('/login');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout request failed:', error);
+    } finally {
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('mustChangePassword');
+      queryClient.clear();
+      setUser(null);
+      setMustChangePassword(false);
+      setLocation('/login');
+    }
   };
 
   if (loading) {
@@ -132,7 +287,7 @@ function App() {
   if (!user) {
     return (
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="light" storageKey="pinnacleai-theme">
+        <ThemeProvider defaultTheme="midnight" storageKey="pinnacleai-theme">
           <TooltipProvider>
             <LoginPage onLoginSuccess={handleLoginSuccess} />
             <Toaster />
@@ -149,11 +304,11 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="pinnacleai-theme">
+      <ThemeProvider defaultTheme="midnight" storageKey="pinnacleai-theme">
         <TooltipProvider>
           <SidebarProvider style={sidebarStyle as React.CSSProperties}>
             <div className="flex h-screen w-full">
-              <AppSidebar user={user} />
+              <AppSidebar user={user} onLogout={handleLogout} />
               <div className="flex flex-col flex-1 min-w-0">
                 <GlobalHeader user={user} onLogout={handleLogout} />
                 <main className="flex-1 overflow-auto">

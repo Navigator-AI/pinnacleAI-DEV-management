@@ -21,6 +21,7 @@ export default function CalendarPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [viewMode, setViewMode] = useState<"month" | "week" | "day">("month");
+  const [eventType, setEventType] = useState("event");
 
   const { data: events = [] } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/events"],
@@ -39,7 +40,15 @@ export default function CalendarPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
       setIsCreateDialogOpen(false);
+      setEventType("event");
       toast({ title: "Event created successfully" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create event",
+        description: error.message || "Please check the form values and try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -58,6 +67,13 @@ export default function CalendarPage() {
       setSelectedEvent(null);
       toast({ title: "Event updated successfully" });
     },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update event",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteEventMutation = useMutation({
@@ -70,6 +86,13 @@ export default function CalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
       setSelectedEvent(null);
       toast({ title: "Event deleted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete event",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -125,7 +148,7 @@ export default function CalendarPage() {
       startTime: `${startDate}T${startTime}`,
       endTime: `${endDate}T${endTime}`,
       location: formData.get("location"),
-      type: formData.get("type"),
+      type: eventType,
       color: formData.get("color"),
     });
   };
@@ -299,7 +322,7 @@ export default function CalendarPage() {
 
             <div>
               <Label htmlFor="type">Event Type</Label>
-              <Select name="type" defaultValue="event">
+              <Select value={eventType} onValueChange={setEventType}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

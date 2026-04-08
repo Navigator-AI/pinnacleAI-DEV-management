@@ -32,9 +32,21 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
   };
 
   const roleConfig = {
-    admin: { label: "Admin", className: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" },
-    manager: { label: "Manager", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
-    member: { label: "Member", className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400" },
+    admin: {
+      label: "Admin",
+      className: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",
+      accent: "from-cyan-400 via-sky-500 to-blue-500",
+    },
+    manager: {
+      label: "Manager",
+      className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+      accent: "from-emerald-400 via-teal-500 to-cyan-500",
+    },
+    member: {
+      label: "Member",
+      className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+      accent: "from-slate-400 via-slate-300 to-slate-500",
+    },
   };
 
   const status = statusConfig[member.status];
@@ -74,8 +86,13 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
   };
 
   return (
-    <Card className="hover-elevate" data-testid={`card-member-${member.id}`}>
-      <CardContent className="p-5">
+    <Card
+      className="group relative overflow-hidden border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] hover-elevate"
+      data-testid={`card-member-${member.id}`}
+    >
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${role.accent}`} />
+      <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-primary/10 blur-3xl opacity-70" />
+      <CardContent className="relative p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -84,7 +101,7 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
                 <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
               </Avatar>
               <span
-                className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card ${status.color}`}
+                className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-card shadow-sm ${status.color}`}
                 title={status.label}
               />
             </div>
@@ -92,7 +109,7 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
               <h3 className="font-semibold" data-testid={`text-member-name-${member.id}`}>
                 {member.name}
               </h3>
-              <p className="text-sm text-muted-foreground">{member.email}</p>
+              <p className="text-sm text-muted-foreground truncate max-w-[180px]">{member.email}</p>
             </div>
           </div>
           <DropdownMenu>
@@ -137,16 +154,16 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
         <div className="flex items-center gap-2 mb-4">
           <Badge
             variant="secondary"
-            className={`${role.className} no-default-hover-elevate no-default-active-elevate`}
+            className={`${role.className} border border-transparent shadow-sm no-default-hover-elevate no-default-active-elevate`}
           >
             {role.label}
           </Badge>
-          <Badge variant="outline" className="text-xs font-normal">
+          <Badge variant="outline" className="text-xs font-normal border-white/10">
             {status.label}
           </Badge>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 rounded-2xl border border-border/70 bg-background/60 p-3 backdrop-blur-sm">
           <div>
             <div className="flex items-center justify-between text-sm mb-1">
               <span className="text-muted-foreground">Workload</span>
@@ -164,11 +181,11 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
             />
           </div>
 
-          <div className="flex items-center gap-3 pt-3 border-t border-border">
+          <div className="flex items-center gap-3 pt-3 border-t border-border/70">
             <Button
               variant="outline"
               size="sm"
-              className="flex-1"
+              className="flex-1 bg-background/70 backdrop-blur-sm"
               data-testid={`button-email-${member.id}`}
               onClick={() => {
                 window.location.href = `mailto:${member.email}`;
@@ -180,7 +197,7 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
             <Button
               variant="outline"
               size="sm"
-              className="flex-1"
+              className="flex-1 bg-background/70 backdrop-blur-sm"
               data-testid={`button-teams-${member.id}`}
               onClick={() => {
                 if (member.teamsUsername) {
@@ -214,6 +231,8 @@ export default function TeamPage() {
   const { data: teamMembers, isLoading } = useQuery<TeamMember[]>({
     queryKey: ["/api/team"],
     enabled: Boolean(user?.id),
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   const filteredMembers =

@@ -92,6 +92,11 @@ function isReportWindowReached(date: Date): boolean {
   return getMinutesInTimezone(date, DAILY_REPORT_TIMEZONE) >= sendMinutes;
 }
 
+function isWeekend(dateKey: string): boolean {
+  const weekday = getWeekdayFromDateKey(dateKey);
+  return weekday === "Saturday" || weekday === "Sunday";
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -205,16 +210,25 @@ async function sendDailyTeamsReport(options?: SendReportOptions): Promise<{
   }
 
   const now = new Date();
-  if (!options?.ignoreSchedule && !isReportWindowReached(now)) {
+  const reportDate = options?.reportDate || getDateKeyInTimezone(now, DAILY_REPORT_TIMEZONE);
+  if (!options?.ignoreSchedule && isWeekend(reportDate)) {
     return {
       sent: false,
-      reason: "Report time window not reached yet",
-      reportDate: getDateKeyInTimezone(now, DAILY_REPORT_TIMEZONE),
+      reason: `Weekend skipped for ${reportDate}`,
+      reportDate,
       totalUpdates: 0,
     };
   }
 
-  const reportDate = options?.reportDate || getDateKeyInTimezone(now, DAILY_REPORT_TIMEZONE);
+  if (!options?.ignoreSchedule && !isReportWindowReached(now)) {
+    return {
+      sent: false,
+      reason: "Report time window not reached yet",
+      reportDate,
+      totalUpdates: 0,
+    };
+  }
+
   const alreadySent = await storage.hasDailyReportBeenSent(reportDate);
   if (!options?.ignoreAlreadySent && alreadySent) {
     return {
@@ -229,6 +243,20 @@ async function sendDailyTeamsReport(options?: SendReportOptions): Promise<{
   try {
     const allUpdates = await storage.getAllTaskUpdates();
     const teamMembers = await storage.getTeamMembers();
+    const adminMembers = teamMembers.filter((member) => member.role === "admin");
+    const teamsNotificationsEnabled = adminMembers.length === 0
+      ? true
+      : adminMembers.some((member) => member.teamsNotificationEnabled ?? true);
+
+    if (!teamsNotificationsEnabled) {
+      return {
+        sent: false,
+        reason: "Teams notifications disabled",
+        reportDate,
+        totalUpdates: 0,
+      };
+    }
+
     const members = teamMembers.filter((member) => member.role === "member");
 
     const todaysUpdates = allUpdates.filter((update: any) => {
@@ -334,3 +362,7 @@ export function startDailyTeamsReportScheduler(): void {
     void sendDailyTeamsReportIfDue();
   }, REPORT_CHECK_INTERVAL_MS);
 }
+
+// Note: The sendDailyTeamsReport function checks if Teams notifications are enabled
+// before sending. This is controlled via the /api/settings/teams-notification endpoint.
+// Users can toggle Teams notifications ON/OFF from the Reports page.

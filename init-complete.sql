@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     gender TEXT DEFAULT 'male',
     role TEXT NOT NULL DEFAULT 'member',
     status TEXT NOT NULL DEFAULT 'online',
+    last_active_at TIMESTAMP DEFAULT NOW(),
     must_change_password BOOLEAN NOT NULL DEFAULT false,
+    teams_notification_enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

@@ -30,8 +30,13 @@ services:
       - DAILY_REPORT_SEND_TIME=22:00
       - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
       - DEFAULT_ADMIN_USERNAME=admin
-      - DEFAULT_ADMIN_PASSWORD=password
+      - DEFAULT_ADMIN_PASSWORD=admin123
       - DEFAULT_ADMIN_EMAIL=admin@pinnacle.ai
+      - DEFAULT_ADMIN_NAME=Girish Desai
+      - EMAIL_HOST=smtp.gmail.com
+      - EMAIL_PORT=587
+      - EMAIL_USER=adminpinnacleai@gmail.com
+      - EMAIL_PASS=peaptyyqxnyetoha
     ports:
       - "0.0.0.0:7855:7855"
     depends_on:

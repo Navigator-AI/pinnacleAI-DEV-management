@@ -22,6 +22,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TaskUpdateDialog } from "@/components/task-update-dialog";
 import type { DashboardStats, Project, Activity, TeamMember, TaskWithDetails } from "@shared/schema";
 
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar?: string;
+  gender?: string;
+  teamsUsername?: string | null;
+  mustChangePassword?: boolean;
+  teamsNotificationEnabled?: boolean;
+};
+
 function StatCard({
   title,
   value,
@@ -70,8 +82,9 @@ function StatCard({
 
 function ProjectCard({ project }: { project: any }) {
   return (
-    <Card className="hover-elevate">
-      <CardContent className="p-4">
+    <Card className="group relative overflow-hidden border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] hover-elevate">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 via-sky-500 to-indigo-500" />
+      <CardContent className="relative p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2">
@@ -152,7 +165,7 @@ function TeamMemberCard({ member }: { member: any }) {
   };
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-md hover-elevate">
+    <div className="group flex items-center gap-3 rounded-2xl border border-border/70 bg-background/60 p-3 backdrop-blur-sm hover-elevate">
       <div className="relative">
         <Avatar className="h-10 w-10">
           <AvatarImage src={member.avatar} />
@@ -175,8 +188,19 @@ function TeamMemberCard({ member }: { member: any }) {
 }
 
 export default function HomePage() {
-  // Get user info from sessionStorage (matches App.tsx storage)
-  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const { data: authData } = useQuery<{ user: AuthUser }>({
+    queryKey: ["/api/auth/me"],
+  });
+
+  const storedUser = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+
+  const user = authData?.user || storedUser;
   
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ["/api/dashboard/stats"],
@@ -198,9 +222,11 @@ export default function HomePage() {
     enabled: Boolean(user?.id),
   });
 
-  const { data: teamMembers, isLoading: teamLoading } = useQuery<any[]>({
+  const { data: teamMembers, isLoading: teamLoading } = useQuery<TeamMember[]>({
     queryKey: ["/api/team"],
     enabled: Boolean(user?.id),
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   const tasksNeedingUpdate = tasks?.filter(task => {
@@ -219,13 +245,19 @@ export default function HomePage() {
   return (
     <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Welcome Section */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold" data-testid="text-welcome">
-          Welcome back, {user?.name || 'User'}
-        </h1>
-        <p className="text-muted-foreground">
-          Here's what's happening across your projects
-        </p>
+      <div className="relative overflow-hidden rounded-3xl border border-border/70 bg-card/80 p-6 shadow-[0_24px_60px_-38px_rgba(2,6,23,0.35)] backdrop-blur-sm">
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-indigo-500/10" />
+        <div className="relative flex flex-col gap-2">
+          <Badge variant="secondary" className="w-fit">
+            Workspace Overview
+          </Badge>
+          <h1 className="text-3xl font-semibold tracking-tight" data-testid="text-welcome">
+            Welcome back, {user?.name || 'User'}
+          </h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Here's what's happening across your projects today.
+          </p>
+        </div>
       </div>
 
       {/* Daily Updates Section (for non-admins) */}

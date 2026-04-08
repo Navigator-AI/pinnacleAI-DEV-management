@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, UserPlus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { TeamMember } from "@shared/schema";
 
@@ -42,7 +42,6 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     password?: string;
     gender: string;
     role: TeamMember["role"];
-    status: TeamMember["status"];
   }>({
     name: "",
     email: "",
@@ -51,7 +50,6 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
     password: "",
     gender: "male",
     role: "member",
-    status: "online",
   });
 
   useEffect(() => {
@@ -62,8 +60,8 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         username: member.email.split('@')[0], // Fallback username
         teamsUsername: member.teamsUsername || "",
         password: "", // Don't show password
+        gender: member.gender || "male",
         role: member.role,
-        status: member.status,
       });
     } else {
       setFormData({
@@ -72,8 +70,8 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         username: "",
         teamsUsername: "",
         password: "",
+        gender: "male",
         role: "member",
-        status: "online",
       });
     }
   }, [member, open]);
@@ -93,7 +91,6 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
         password: formData.password || "password",
         gender: formData.gender,
         role: formData.role,
-        status: formData.status
       };
       
       console.log('Payload being sent:', { ...payload, password: '[HIDDEN]' });
@@ -233,25 +230,6 @@ export function TeamMemberDialog({ member, onSuccess, trigger }: TeamMemberDialo
                   <SelectContent>
                     <SelectItem value="male">Male</SelectItem>
                     <SelectItem value="female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="status">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value: any) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="away">Away</SelectItem>
-                    <SelectItem value="busy">Busy</SelectItem>
-                    <SelectItem value="offline">Offline</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

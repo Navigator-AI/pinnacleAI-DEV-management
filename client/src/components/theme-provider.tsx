@@ -19,6 +19,7 @@ const initialState: ThemeProviderState = {
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+const THEME_MIGRATION_VERSION = "3";
 
 export function ThemeProvider({
   children,
@@ -27,13 +28,26 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+    () => {
+      const storedTheme = localStorage.getItem(storageKey) as Theme | null;
+      const storedVersion = localStorage.getItem(`${storageKey}-version`);
+
+      if (defaultTheme === "midnight" && storedVersion !== THEME_MIGRATION_VERSION) {
+        const nextTheme: Theme = "midnight";
+        localStorage.setItem(storageKey, nextTheme);
+        localStorage.setItem(`${storageKey}-version`, THEME_MIGRATION_VERSION);
+        return nextTheme;
+      }
+
+      return storedTheme || defaultTheme;
+    }
   );
 
   useEffect(() => {
     const root = window.document.documentElement;
 
     root.classList.remove("light", "dark", "midnight");
+    root.style.colorScheme = "light";
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
@@ -42,16 +56,25 @@ export function ThemeProvider({
         : "light";
 
       root.classList.add(systemTheme);
+      root.style.colorScheme = systemTheme;
+      return;
+    }
+
+    if (theme === "midnight") {
+      root.classList.add("dark", "midnight");
+      root.style.colorScheme = "dark";
       return;
     }
 
     root.classList.add(theme);
+    root.style.colorScheme = theme === "dark" ? "dark" : "light";
   }, [theme]);
 
   const value = {
     theme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme);
+      localStorage.setItem(`${storageKey}-version`, THEME_MIGRATION_VERSION);
       setTheme(theme);
     },
   };

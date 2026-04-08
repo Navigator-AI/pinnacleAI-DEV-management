@@ -4,11 +4,13 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { storage } from "./storage";
-import { loginSchema, taskUpdateSchema, issueUpdateSchema, insertUserSchema, insertTaskUpdateSchema, insertSubtaskSchema, insertCommentSchema, insertFolderSchema, insertDocumentSchema, insertCalendarEventSchema } from "@shared/schema";
+import { loginSchema, taskUpdateSchema, issueUpdateSchema, insertUserSchema, insertTaskUpdateSchema, insertSubtaskSchema, insertCommentSchema, insertFolderSchema, insertDocumentSchema, insertCalendarEventSchema, type User, type ProjectWithDetails, type TaskWithDetails } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
+import { emailService } from "./email-service";
 
 // Configure multer for file uploads
 const uploadDir = path.join(process.cwd(), "data", "uploads");
@@ -24,6 +26,14 @@ const upload = multer({
       cb(null, uniqueSuffix + path.extname(file.originalname));
     },
   }),
+});
+
+const taskUpdateEditSchema = z.object({
+  content: z.string().trim().min(1),
+});
+
+const presenceUpdateSchema = z.object({
+  status: z.enum(["online", "away", "busy", "offline"]).default("online"),
 });
 
 // Middleware to check if user is authenticated
@@ -135,6 +145,10 @@ export async function registerRoutes(
             return res.status(500).json({ error: 'Login error' });
           }
 
+          storage.recordUserPresence(user.id, "online").catch((presenceError) => {
+            console.error('Failed to record presence on login:', presenceError);
+          });
+
           // console.log('Login successful for:', user.email);
           // Return user info without password
           const { password: _, ...userInfo } = user;
@@ -157,17 +171,173 @@ export async function registerRoutes(
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Logout error' });
+    const userId = (req.user as any)?.id;
+
+    const completeLogout = () => {
+      req.logout((err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Logout error' });
+        }
+        res.json({ success: true, message: 'Logout successful' });
+      });
+    };
+
+    if (userId) {
+      storage.recordUserPresence(userId, "offline").catch((presenceError) => {
+        console.error('Failed to record presence on logout:', presenceError);
+      }).finally(completeLogout);
+      return;
+    }
+
+    completeLogout();
+  });
+
+  app.post("/api/presence/heartbeat", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const { status } = presenceUpdateSchema.parse(req.body ?? {});
+      const updated = await storage.recordUserPresence(userId, status);
+
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
       }
-      res.json({ success: true, message: 'Logout successful' });
-    });
+
+      res.json({
+        success: true,
+        status: updated.status,
+        lastActiveAt: updated.lastActiveAt,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid input", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update presence" });
+      }
+    }
   });
 
   app.get('/api/auth/me', requireAuth, (req, res) => {
     const { password: _, ...userInfo } = req.user as any;
     res.json({ user: userInfo });
+  });
+
+  // Password Reset - Request reset code
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+
+      // Find user by email
+      const user = await storage.getUserByEmail(email);
+      
+      if (!user) {
+        // Don't reveal if user exists or not for security
+        return res.json({ 
+          success: true, 
+          message: 'If an account exists with this email, a reset code will be sent.' 
+        });
+      }
+
+      // Generate 6-digit code
+      const resetCode = crypto.randomInt(100000, 999999).toString();
+      
+      // Token expires in 15 minutes
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+      // Save token to database
+      await storage.createPasswordResetToken(user.id, resetCode, expiresAt);
+
+      // Send email
+      await emailService.sendPasswordResetEmail(user.email, resetCode, user.name);
+
+      res.json({ 
+        success: true, 
+        message: 'If an account exists with this email, a reset code will be sent.' 
+      });
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      res.status(500).json({ error: 'Failed to process password reset request' });
+    }
+  });
+
+  // Password Reset - Verify code
+  app.post('/api/auth/verify-reset-code', async (req, res) => {
+    try {
+      const { code } = req.body;
+
+      if (!code) {
+        return res.status(400).json({ error: 'Reset code is required' });
+      }
+
+      const tokenData = await storage.getPasswordResetToken(code);
+
+      if (!tokenData) {
+        return res.status(400).json({ error: 'Invalid reset code' });
+      }
+
+      if (tokenData.used) {
+        return res.status(400).json({ error: 'This reset code has already been used' });
+      }
+
+      if (new Date() > new Date(tokenData.expiresAt)) {
+        return res.status(400).json({ error: 'Reset code has expired' });
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Code verified successfully',
+        userId: tokenData.userId 
+      });
+    } catch (error) {
+      console.error('Verify reset code error:', error);
+      res.status(500).json({ error: 'Failed to verify reset code' });
+    }
+  });
+
+  // Password Reset - Set new password
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { code, newPassword } = req.body;
+
+      if (!code || !newPassword) {
+        return res.status(400).json({ error: 'Reset code and new password are required' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
+
+      const tokenData = await storage.getPasswordResetToken(code);
+
+      if (!tokenData) {
+        return res.status(400).json({ error: 'Invalid reset code' });
+      }
+
+      if (tokenData.used) {
+        return res.status(400).json({ error: 'This reset code has already been used' });
+      }
+
+      if (new Date() > new Date(tokenData.expiresAt)) {
+        return res.status(400).json({ error: 'Reset code has expired' });
+      }
+
+      // Update user password
+      await storage.updateTeamMember(tokenData.userId, { password: newPassword });
+
+      // Mark token as used
+      await storage.markTokenAsUsed(code);
+
+      res.json({ 
+        success: true, 
+        message: 'Password reset successfully' 
+      });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(500).json({ error: 'Failed to reset password' });
+    }
   });
 
   // Health check endpoint
@@ -236,8 +406,20 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
       
-      const { name, email } = req.body;
-      const updates = { name, email };
+      const { name, email, avatar, gender, teamsUsername } = req.body;
+      const updates: Partial<User> = {};
+
+      if (typeof name === "string") updates.name = name.trim();
+      if (typeof email === "string") updates.email = email.trim();
+      if (typeof avatar === "string" || avatar === null) updates.avatar = avatar;
+      if (typeof gender === "string" || gender === null) updates.gender = gender;
+      if (typeof teamsUsername === "string" || teamsUsername === null) {
+        updates.teamsUsername = teamsUsername;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields provided" });
+      }
       
       const user = await storage.updateTeamMember(requestedUserId, updates);
       if (!user) {
@@ -341,10 +523,14 @@ export async function registerRoutes(
       const userData = insertUserSchema.parse(req.body);
       const user = await storage.createUser({
         ...userData,
+        teamsUsername: userData.teamsUsername ?? null,
         avatar: userData.avatar ?? null,
+        gender: userData.gender ?? "male",
         role: userData.role ?? "member",
-        status: userData.status ?? "online",
+        status: "online",
+        lastActiveAt: new Date(),
         mustChangePassword: true, // Force password change on first login
+        teamsNotificationEnabled: true,
       });
       
       console.log('Team member added to database:', user.id);
@@ -479,24 +665,31 @@ export async function registerRoutes(
 
   // Test task creation with current user assignment
   app.post("/api/test/create-user-task", requireAuth, async (req, res) => {
-    try {
-      const userId = (req.user as any)?.id;
-      const testTask = {
-        title: "My Test Task " + Date.now(),
-        description: "Test task assigned to current user",
-        priority: "medium",
-        status: "todo",
-        progress: 0,
-        assigneeId: userId // Assign to current user
-      };
+      try {
+        const userId = (req.user as any)?.id;
+        const testTask = {
+          title: "My Test Task " + Date.now(),
+          description: "Test task assigned to current user",
+          priority: "medium",
+          status: "todo",
+          progress: 0,
+          projectId: null,
+          assigneeId: userId, // Assign to current user
+          createdBy: userId,
+          dueDate: null,
+          startDate: null,
+          order: 0,
+        };
       
       console.log('Creating test task for user:', userId);
       const newTask = await storage.createTask(testTask);
       console.log('Test task created:', newTask);
       res.json({ success: true, task: newTask });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Test create user task error:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to create test task",
+      });
     }
   });
 
@@ -511,28 +704,39 @@ export async function registerRoutes(
         count: allTasks.length, 
         tasks: allTasks 
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Test endpoint error:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch test tasks",
+      });
     }
   });
 
   // Test task creation
   app.post("/api/test/create-task", async (req, res) => {
-    try {
-      const testTask = {
-        title: "Test Task " + Date.now(),
-        description: "Test description",
-        priority: "medium",
-        status: "todo",
-        progress: 0
-      };
+      try {
+        const testTask = {
+          title: "Test Task " + Date.now(),
+          description: "Test description",
+          priority: "medium",
+          status: "todo",
+          progress: 0
+          ,
+          projectId: null,
+          assigneeId: null,
+          createdBy: null,
+          dueDate: null,
+          startDate: null,
+          order: 0,
+        };
       
       const newTask = await storage.createTask(testTask);
       res.json({ success: true, task: newTask });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Test create error:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to create test task",
+      });
     }
   });
 
@@ -895,6 +1099,55 @@ export async function registerRoutes(
     }
   });
 
+  // Edit daily task update (members only, own updates)
+  app.put("/api/tasks/:taskId/updates/:updateId", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const userRole = (req.user as any)?.role;
+
+      if (userRole !== 'member') {
+        return res.status(403).json({ error: "Only team members can edit daily updates" });
+      }
+
+      const task = await storage.getTask(req.params.taskId, userId);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found or not assigned to you" });
+      }
+
+      const update = await storage.getTaskUpdate(req.params.updateId);
+      if (!update || update.taskId !== req.params.taskId) {
+        return res.status(404).json({ error: "Update not found" });
+      }
+
+      if (update.userId !== userId) {
+        return res.status(403).json({ error: "You can only edit your own updates" });
+      }
+
+      const updates = taskUpdateEditSchema.parse(req.body);
+      const updated = await storage.updateTaskUpdate(req.params.updateId, updates);
+
+      if (!updated) {
+        return res.status(404).json({ error: "Update not found" });
+      }
+
+      await storage.createActivity({
+        projectId: task.projectId,
+        userId: userId,
+        action: 'edited an update for',
+        target: task.title,
+        targetType: 'task'
+      });
+
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid input', details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update task update" });
+      }
+    }
+  });
+
   // Admin can view all task updates from all members
   app.get("/api/admin/task-updates", requireAuth, requireAdmin, async (req, res) => {
     try {
@@ -1086,8 +1339,8 @@ export async function registerRoutes(
       const tasks = await storage.getTasks(userId);
       const teamMembers = await storage.getTeamMembers();
       
-      // Calculate project health (percentage of projects on track)
-      const onTrackProjects = projects.filter(p => p.status === 'active').length;
+      // Calculate project health (percentage of healthy projects)
+      const onTrackProjects = projects.filter(p => p.status === 'on-track' || p.status === 'completed').length;
       const projectHealth = projects.length > 0 ? Math.round((onTrackProjects / projects.length) * 100) : 0;
       
       // Calculate task completion
@@ -1099,7 +1352,7 @@ export async function registerRoutes(
       
       res.json({
         projectHealth,
-        taskCompletion: completedTasks,
+        taskCompletion,
         totalTasks: tasks.length,
         teamEfficiency,
         totalProjects: projects.length,
@@ -1115,16 +1368,41 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any)?.id;
       const tasks = await storage.getTasks(userId);
-      
-      // Group tasks by status
-      const statusCounts = {
-        todo: tasks.filter(t => t.status === 'todo').length,
-        'in-progress': tasks.filter(t => t.status === 'in-progress').length,
-        review: tasks.filter(t => t.status === 'review').length,
-        done: tasks.filter(t => t.status === 'done').length
-      };
-      
-      res.json(statusCounts);
+
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+
+      const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const completedTasks = tasks.filter((task) => task.status === "done" && task.updatedAt);
+
+      const trendData = Array.from({ length: 14 }, (_, index) => {
+        const day = new Date();
+        day.setDate(day.getDate() - (13 - index));
+        const dayStart = startOfDay(day);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+
+        const completed = completedTasks.filter((task) => {
+          const updatedAt = task.updatedAt ? new Date(task.updatedAt as any) : null;
+          return updatedAt !== null && updatedAt >= dayStart && updatedAt < dayEnd;
+        }).length;
+
+        const cumulativeCompleted = completedTasks.filter((task) => {
+          const updatedAt = task.updatedAt ? new Date(task.updatedAt as any) : null;
+          return updatedAt !== null && updatedAt < dayEnd;
+        }).length;
+
+        return {
+          date: dayStart.toISOString(),
+          label: formatter.format(dayStart),
+          completed,
+          cumulativeCompleted,
+        };
+      });
+
+      res.json(trendData);
     } catch (error) {
       console.error('Get task completion trend error:', error);
       res.status(500).json({ error: "Failed to get task completion trend" });
@@ -1134,31 +1412,60 @@ export async function registerRoutes(
   app.get("/api/reports/workload-distribution", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any)?.id;
-      const tasks = await storage.getTasks(userId);
-      const teamMembers = await storage.getTeamMembers();
-      
-      // Calculate workload per team member
-      const workloadMap = new Map();
-      
-      teamMembers.forEach(member => {
-        workloadMap.set(member.id, {
-          name: member.name,
+      const projects = await storage.getProjects(userId) as ProjectWithDetails[];
+      const tasks = await storage.getTasks(userId) as TaskWithDetails[];
+
+      const workloadMap = new Map<string, {
+        id: string;
+        name: string;
+        totalTasks: number;
+        completedTasks: number;
+        inProgressTasks: number;
+      }>();
+
+      projects.forEach((project) => {
+        workloadMap.set(project.id, {
+          id: project.id,
+          name: project.name,
           totalTasks: 0,
           completedTasks: 0,
-          inProgressTasks: 0
+          inProgressTasks: 0,
         });
       });
-      
-      tasks.forEach(task => {
-        if (task.assigneeId && workloadMap.has(task.assigneeId)) {
-          const workload = workloadMap.get(task.assigneeId);
-          workload.totalTasks++;
-          if (task.status === 'done') workload.completedTasks++;
-          if (task.status === 'in-progress') workload.inProgressTasks++;
+
+      tasks.forEach((task) => {
+        if (!task.projectId || !workloadMap.has(task.projectId)) {
+          return;
+        }
+
+        const workload = workloadMap.get(task.projectId);
+        if (!workload) {
+          return;
+        }
+
+        workload.totalTasks += 1;
+
+        const isCompleted =
+          task.status === "done" ||
+          (typeof task.progress === "number" && Number.isFinite(task.progress) && task.progress >= 100);
+
+        if (isCompleted) {
+          workload.completedTasks += 1;
+        } else if (task.status === "in-progress" || task.status === "review") {
+          workload.inProgressTasks += 1;
         }
       });
-      
-      const workloadData = Array.from(workloadMap.values());
+
+      const maxTasks = Math.max(1, ...Array.from(workloadMap.values()).map((project) => project.totalTasks));
+      const workloadData = Array.from(workloadMap.values())
+        .map((project) => ({
+          ...project,
+          remainingTasks: Math.max(project.totalTasks - project.completedTasks - project.inProgressTasks, 0),
+          completionRate: project.totalTasks > 0 ? Math.round((project.completedTasks / project.totalTasks) * 100) : 0,
+          workloadPercent: Math.round((project.totalTasks / maxTasks) * 100),
+        }))
+        .sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
+
       res.json(workloadData);
     } catch (error) {
       console.error('Get workload distribution error:', error);
@@ -1336,6 +1643,44 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete calendar event" });
+    }
+  });
+
+  app.get("/api/settings/teams-notification", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const user = await storage.getTeamMember(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ teamsNotificationEnabled: user.teamsNotificationEnabled ?? true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get Teams notification setting" });
+    }
+  });
+
+  app.put("/api/settings/teams-notification", requireAuth, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: "enabled must be a boolean" });
+      }
+
+      const user = await storage.updateTeamMember(userId, { teamsNotificationEnabled: enabled });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.json({ 
+        success: true, 
+        teamsNotificationEnabled: enabled,
+        message: enabled ? "Teams notifications enabled" : "Teams notifications disabled"
+      });
+    } catch (error) {
+      console.error('Update Teams notification setting error:', error);
+      res.status(500).json({ error: "Failed to update Teams notification setting" });
     }
   });
 

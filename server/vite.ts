@@ -4,7 +4,19 @@ import { type Server } from "http";
 import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
+import crypto, { type BinaryToTextEncoding } from "crypto";
+import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
+
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+
+if (typeof (crypto as any).hash !== "function") {
+  (crypto as any).hash = (
+    algorithm: string,
+    text: string,
+    encoding: BinaryToTextEncoding,
+  ) => crypto.createHash(algorithm).update(text).digest(encoding);
+}
 
 const viteLogger = createLogger();
 
@@ -36,7 +48,7 @@ export async function setupVite(server: Server, app: Express) {
 
     try {
       const clientTemplate = path.resolve(
-        import.meta.dirname,
+        serverDir,
         "..",
         "client",
         "index.html",

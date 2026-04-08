@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import type { TeamMember } from "@shared/schema";
+import { useLocation } from "wouter";
 import {
   Settings as SettingsIcon,
   User,
@@ -28,6 +30,54 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useTheme } from "@/components/theme-provider";
+
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar?: string;
+  gender?: string;
+  teamsUsername?: string | null;
+  mustChangePassword?: boolean;
+  teamsNotificationEnabled?: boolean;
+};
+
+const readStoredUser = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('user') || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const buildAvatarUrl = (seed: string, gender: 'male' | 'female') => {
+  const style = gender === 'female' ? 'lorelei' : 'adventurer';
+  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+};
+
+const maleAvatarSeeds = [
+  'John',
+  'Mike',
+  'David',
+  'James',
+  'Robert',
+  'William',
+  'Richard',
+  'Thomas',
+];
+
+const femaleAvatarSeeds = [
+  'Emma',
+  'Olivia',
+  'Sophia',
+  'Isabella',
+  'Mia',
+  'Charlotte',
+  'Amelia',
+  'Harper',
+];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile");
@@ -37,37 +87,45 @@ export default function SettingsPage() {
   const [integrationUrl, setIntegrationUrl] = useState('');
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
   const [selectedAvatar, setSelectedAvatar] = useState('');
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('pinnacleai-compact-mode') === 'true');
+  const [animationsEnabled, setAnimationsEnabled] = useState(() => localStorage.getItem('pinnacleai-animations-enabled') !== 'false');
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const { theme, setTheme } = useTheme();
 
-  const { data: userData } = useQuery({
+  const { data: authData } = useQuery<{ user: AuthUser }>({
+    queryKey: ["/api/auth/me"],
+  });
+
+  const user = authData?.user || readStoredUser();
+  const nameParts = (user?.name || '').trim().split(/\s+/).filter(Boolean);
+  const [profileForm, setProfileForm] = useState({
+    firstName: nameParts[0] || '',
+    lastName: nameParts.slice(1).join(' ') || '',
+    email: user?.email || '',
+  });
+
+  useEffect(() => {
+    const nextNameParts = (user?.name || '').trim().split(/\s+/).filter(Boolean);
+    setProfileForm({
+      firstName: nextNameParts[0] || '',
+      lastName: nextNameParts.slice(1).join(' ') || '',
+      email: user?.email || '',
+    });
+  }, [user?.id, user?.name, user?.email]);
+
+  const { data: userData } = useQuery<TeamMember>({
     queryKey: [`/api/users/${user.id}`],
     enabled: Boolean(user?.id),
   });
 
-  const maleAvatars = [
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=John&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=David&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=James&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Robert&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=William&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Richard&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Thomas&gender=male',
-  ];
-  
-  const femaleAvatars = [
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Emma&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Olivia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Isabella&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlotte&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Amelia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Harper&gender=female',
-  ];
+  useEffect(() => {
+    setSelectedGender((userData?.gender || user?.gender || 'male') as 'male' | 'female');
+  }, [userData?.gender, user?.gender]);
+
+  const maleAvatars = maleAvatarSeeds.map((seed) => buildAvatarUrl(seed, 'male'));
+  const femaleAvatars = femaleAvatarSeeds.map((seed) => buildAvatarUrl(seed, 'female'));
 
   const updateAvatarMutation = useMutation({
     mutationFn: async (data: { avatar: string; gender: string }) => {
@@ -80,29 +138,79 @@ export default function SettingsPage() {
       return response.json();
     },
     onSuccess: (updatedUser) => {
-      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-      const newUser = { ...currentUser, avatar: updatedUser.avatar };
+      const currentUser = authData?.user || readStoredUser();
+      const newUser = {
+        ...currentUser,
+        avatar: updatedUser.avatar,
+        gender: updatedUser.gender ?? selectedGender,
+      };
       sessionStorage.setItem('user', JSON.stringify(newUser));
+      queryClient.setQueryData(["/api/auth/me"], { user: newUser });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/team'] });
+      window.dispatchEvent(new Event('user-updated'));
       setShowAvatarDialog(false);
       toast({
         title: "Avatar Updated",
         description: "Your avatar has been updated successfully.",
       });
-      // Refresh page to show new avatar
-      setTimeout(() => window.location.reload(), 500);
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: { name: string; email: string }) => {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update profile');
+      return response.json();
+    },
+    onSuccess: (updatedUser) => {
+      const currentUser = authData?.user || readStoredUser();
+      const newUser = { ...currentUser, ...updatedUser };
+      sessionStorage.setItem('user', JSON.stringify(newUser));
+      queryClient.setQueryData(["/api/auth/me"], { user: newUser });
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/team'] });
+      window.dispatchEvent(new Event('user-updated'));
+      toast({
+        title: "Profile Updated",
+        description: "Your profile changes have been saved successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update profile. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
   const handleSaveProfile = () => {
-    toast({ 
-      title: "Profile Updated", 
-      description: "Your profile changes have been saved successfully" 
+    const fullName = `${profileForm.firstName} ${profileForm.lastName}`.trim();
+
+    if (!fullName || !profileForm.email) {
+      toast({
+        title: "Error",
+        description: "Please fill in your name and email.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateProfileMutation.mutate({
+      name: fullName,
+      email: profileForm.email,
     });
   };
 
   const handleChangeAvatar = () => {
+    const nextGender = (userData?.gender || user?.gender || 'male') as 'male' | 'female';
+    setSelectedGender(nextGender);
+    setSelectedAvatar(userData?.avatar || user?.avatar || buildAvatarUrl(user?.name || 'User', nextGender));
     setShowAvatarDialog(true);
   };
 
@@ -113,10 +221,7 @@ export default function SettingsPage() {
   };
 
   const handleChangePassword = () => {
-    toast({ 
-      title: "Change Password", 
-      description: "Password change functionality coming soon" 
-    });
+    setLocation('/profile');
   };
 
   const handleConnectIntegration = (service: string) => {
@@ -189,7 +294,9 @@ export default function SettingsPage() {
               <CardContent className="space-y-6">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-20 w-20">
-                    <AvatarImage src={userData?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}`} />
+                    <AvatarImage
+                      src={userData?.avatar || user?.avatar || buildAvatarUrl(user?.name || 'User', (userData?.gender || user?.gender || 'male') as 'male' | 'female')}
+                    />
                     <AvatarFallback>{user?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}</AvatarFallback>
                   </Avatar>
                   <div>
@@ -207,18 +314,29 @@ export default function SettingsPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" defaultValue={user?.name?.split(' ')[0] || ''} data-testid="input-first-name" />
+                    <Input
+                      id="firstName"
+                      value={profileForm.firstName}
+                      onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                      data-testid="input-first-name"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue={user?.name?.split(' ')[1] || ''} data-testid="input-last-name" />
+                    <Input
+                      id="lastName"
+                      value={profileForm.lastName}
+                      onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                      data-testid="input-last-name"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input
                       id="email"
                       type="email"
-                      defaultValue={user?.email || ''}
+                      value={profileForm.email}
+                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                       data-testid="input-email"
                     />
                   </div>
@@ -229,8 +347,8 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button data-testid="button-save-profile" onClick={handleSaveProfile}>
-                    Save Changes
+                  <Button data-testid="button-save-profile" onClick={handleSaveProfile} disabled={updateProfileMutation.isPending}>
+                    {updateProfileMutation.isPending ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </CardContent>
@@ -325,7 +443,11 @@ export default function SettingsPage() {
                     <p className="font-medium">Dark Mode</p>
                     <p className="text-sm text-muted-foreground">Use dark theme</p>
                   </div>
-                  <Switch data-testid="switch-dark-mode" />
+                  <Switch
+                    checked={theme === 'dark' || theme === 'midnight'}
+                    onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                    data-testid="switch-dark-mode"
+                  />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
@@ -333,7 +455,14 @@ export default function SettingsPage() {
                     <p className="font-medium">Compact Mode</p>
                     <p className="text-sm text-muted-foreground">Reduce spacing for more content</p>
                   </div>
-                  <Switch data-testid="switch-compact-mode" />
+                  <Switch
+                    checked={compactMode}
+                    onCheckedChange={(checked) => {
+                      setCompactMode(checked);
+                      localStorage.setItem('pinnacleai-compact-mode', String(checked));
+                    }}
+                    data-testid="switch-compact-mode"
+                  />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
@@ -341,7 +470,14 @@ export default function SettingsPage() {
                     <p className="font-medium">Show Animations</p>
                     <p className="text-sm text-muted-foreground">Enable smooth transitions</p>
                   </div>
-                  <Switch defaultChecked data-testid="switch-animations" />
+                  <Switch
+                    checked={animationsEnabled}
+                    onCheckedChange={(checked) => {
+                      setAnimationsEnabled(checked);
+                      localStorage.setItem('pinnacleai-animations-enabled', String(checked));
+                    }}
+                    data-testid="switch-animations"
+                  />
                 </div>
               </CardContent>
             </Card>

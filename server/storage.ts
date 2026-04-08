@@ -3,7 +3,7 @@ dotenv.config();
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { eq, and, desc, sql, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, or } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import {
   users,
@@ -20,6 +20,7 @@ import {
   notifications,
   taskAssignees,
   calendarEvents,
+  passwordResetTokens,
   type User,
   type Project,
   type Task,
@@ -75,33 +76,298 @@ try {
 
 // Generate avatar URL based on gender
 const avatar = (seed: string, gender: string = 'male') => {
-  const style = gender === 'female' ? 'avataaars' : 'avataaars';
-  const hairOptions = gender === 'female' 
-    ? 'hairColor=BrownDark,Black,Blonde,Brown&top=LongHairStraight,LongHairCurly,LongHairBun'
-    : 'hairColor=BrownDark,Black,Brown&top=ShortHairShortFlat,ShortHairShortWaved,ShortHairDreads01';
-  return `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}&${hairOptions}`;
+  const style = gender === 'female' ? 'lorelei' : 'adventurer';
+  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
 };
 
-// Initialize default admin if no users exist
-async function initializeDefaultAdmin() {
+const PRESENCE_ONLINE_MS = 5 * 60 * 1000;
+const PRESENCE_AWAY_MS = 8 * 60 * 60 * 1000;
+
+const normalizePresenceStatus = (status?: string | null): TeamMember["status"] => {
+  if (status === "online" || status === "away" || status === "busy" || status === "offline") {
+    return status;
+  }
+
+  return "online";
+};
+
+const derivePresenceStatus = (
+  status?: string | null,
+  lastActiveAt?: Date | string | null,
+): TeamMember["status"] => {
+  const normalizedStatus = normalizePresenceStatus(status);
+
+  if (normalizedStatus === "busy" || normalizedStatus === "offline") {
+    return normalizedStatus;
+  }
+
+  if (normalizedStatus === "away" && !lastActiveAt) {
+    return normalizedStatus;
+  }
+
+  if (!lastActiveAt) {
+    return normalizedStatus;
+  }
+
+  const lastSeen = new Date(lastActiveAt);
+  if (Number.isNaN(lastSeen.getTime())) {
+    return normalizedStatus;
+  }
+
+  const inactiveFor = Date.now() - lastSeen.getTime();
+  if (inactiveFor <= PRESENCE_ONLINE_MS) {
+    return "online";
+  }
+
+  if (inactiveFor <= PRESENCE_AWAY_MS) {
+    return "away";
+  }
+
+  return "offline";
+};
+
+const isTaskCompleted = (task: Pick<Task, "status" | "progress">) => {
+  if (task.status === "done") {
+    return true;
+  }
+
+  if (typeof task.progress === "number" && Number.isFinite(task.progress)) {
+    return task.progress >= 100;
+  }
+
+  return false;
+};
+
+const buildTeamWorkloadMap = async () => {
+  const [allUsers, allTasks, allTaskAssignees]: [
+    Pick<User, "id">[],
+    Pick<Task, "id" | "assigneeId" | "status" | "progress">[],
+    Pick<TaskAssignee, "taskId" | "userId">[],
+  ] = await Promise.all([
+    db.select({ id: users.id }).from(users),
+    db.select({
+      id: tasks.id,
+      assigneeId: tasks.assigneeId,
+      status: tasks.status,
+      progress: tasks.progress,
+    }).from(tasks),
+    db.select({
+      taskId: taskAssignees.taskId,
+      userId: taskAssignees.userId,
+    }).from(taskAssignees),
+  ]);
+
+  const workloadMap = new Map<string, { assignedTasks: number; activeTasks: number }>();
+
+  allUsers.forEach((user: Pick<User, "id">) => {
+    workloadMap.set(user.id, { assignedTasks: 0, activeTasks: 0 });
+  });
+
+  const assigneesByTaskId = new Map<string, Set<string>>();
+  allTaskAssignees.forEach((assignment) => {
+    const assignees = assigneesByTaskId.get(assignment.taskId) ?? new Set<string>();
+    assignees.add(assignment.userId);
+    assigneesByTaskId.set(assignment.taskId, assignees);
+  });
+
+  allTasks.forEach((task) => {
+    const assignees = assigneesByTaskId.get(task.id) ?? new Set<string>();
+
+    if (task.assigneeId) {
+      assignees.add(task.assigneeId);
+    }
+
+    assigneesByTaskId.set(task.id, assignees);
+  });
+
+  allTasks.forEach((task) => {
+    const assignees = assigneesByTaskId.get(task.id);
+    if (!assignees || assignees.size === 0) {
+      return;
+    }
+
+    const completed = isTaskCompleted(task);
+
+    assignees.forEach((userId) => {
+      const workload = workloadMap.get(userId);
+      if (!workload) {
+        return;
+      }
+
+      workload.assignedTasks += 1;
+      if (!completed) {
+        workload.activeTasks += 1;
+      }
+    });
+  });
+
+  const maxActiveTasks = Math.max(1, ...Array.from(workloadMap.values()).map((entry) => entry.activeTasks));
+  const normalizedMap = new Map<string, number>();
+
+  workloadMap.forEach((value, userId) => {
+    normalizedMap.set(userId, Math.round((value.activeTasks / maxActiveTasks) * 100));
+  });
+
+  return normalizedMap;
+};
+
+const toTeamMember = (user: User, workload = 0): TeamMember => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  teamsUsername: user.teamsUsername || undefined,
+  avatar: user.avatar || avatar(user.name, user.gender || 'male'),
+  gender: user.gender ?? undefined,
+  teamsNotificationEnabled: user.teamsNotificationEnabled ?? true,
+  lastActiveAt: user.lastActiveAt ?? null,
+  role: user.role as "admin" | "manager" | "member",
+  status: derivePresenceStatus(user.status, user.lastActiveAt),
+  workload,
+});
+
+const calculateProjectProgress = (projectTasks: Task[], storedProgress?: number | null) => {
+  if (projectTasks.length === 0) {
+    return storedProgress ?? 0;
+  }
+
+  const computedProgress = Math.round(
+    projectTasks.reduce((sum, task) => {
+      if (typeof task.progress === "number" && Number.isFinite(task.progress) && task.progress > 0) {
+        return sum + Math.min(task.progress, 100);
+      }
+
+      switch (task.status) {
+        case "done":
+          return sum + 100;
+        case "review":
+          return sum + 85;
+        case "in-progress":
+          return sum + 50;
+        default:
+          return sum;
+      }
+    }, 0) / projectTasks.length
+  );
+
+  return computedProgress > 0 ? computedProgress : (storedProgress ?? 0);
+};
+
+const DEFAULT_ADMIN_EMAIL = process.env.DEFAULT_ADMIN_EMAIL || 'admin@pinnacle.ai';
+const DEFAULT_ADMIN_USERNAME = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
+const DEFAULT_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+const DEFAULT_ADMIN_NAME = process.env.DEFAULT_ADMIN_NAME || 'Girish Desai';
+const DEFAULT_ADMIN_GENDER = process.env.DEFAULT_ADMIN_GENDER || 'male';
+
+async function buildDefaultAdminValues() {
+  const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
+
+  return {
+    username: DEFAULT_ADMIN_USERNAME,
+    password: hashedPassword,
+    name: DEFAULT_ADMIN_NAME,
+    email: DEFAULT_ADMIN_EMAIL,
+    role: 'admin',
+    status: 'online',
+    lastActiveAt: new Date(),
+    gender: DEFAULT_ADMIN_GENDER,
+    mustChangePassword: false,
+    teamsNotificationEnabled: true,
+    avatar: avatar(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_GENDER),
+  };
+}
+
+async function ensureUsersSchemaCompatibility() {
+  await client.unsafe(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS teams_notification_enabled BOOLEAN NOT NULL DEFAULT true
+  `);
+
+  await client.unsafe(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP DEFAULT NOW()
+  `);
+
+  await client.unsafe(`
+    ALTER TABLE users
+    ALTER COLUMN last_active_at SET DEFAULT NOW()
+  `);
+
+  await client.unsafe(`
+    UPDATE users
+    SET last_active_at = COALESCE(last_active_at, updated_at, created_at, NOW())
+    WHERE last_active_at IS NULL
+  `);
+
+  const [presenceSnapshot] = await db
+    .select({
+      nonAdminCount: sql<number>`count(*) filter (where ${users.role} <> 'admin')`,
+      minLastActiveAt: sql<Date | null>`min(${users.lastActiveAt}) filter (where ${users.role} <> 'admin')`,
+      maxLastActiveAt: sql<Date | null>`max(${users.lastActiveAt}) filter (where ${users.role} <> 'admin')`,
+    })
+    .from(users);
+
+  const nonAdminCount = Number(presenceSnapshot?.nonAdminCount ?? 0);
+  const minLastActiveAt = presenceSnapshot?.minLastActiveAt
+    ? new Date(presenceSnapshot.minLastActiveAt)
+    : null;
+  const maxLastActiveAt = presenceSnapshot?.maxLastActiveAt
+    ? new Date(presenceSnapshot.maxLastActiveAt)
+    : null;
+
+  if (nonAdminCount >= 3 && minLastActiveAt && maxLastActiveAt) {
+    const spreadMs = Math.abs(maxLastActiveAt.getTime() - minLastActiveAt.getTime());
+    const recentCutoffMs = Date.now() - 2 * 60 * 60 * 1000;
+
+    if (spreadMs <= 2 * 60 * 1000 && maxLastActiveAt.getTime() >= recentCutoffMs) {
+      await client.unsafe(`
+        UPDATE users
+        SET last_active_at = COALESCE(updated_at, created_at, NOW())
+        WHERE role <> 'admin'
+          AND last_active_at >= NOW() - INTERVAL '2 hours'
+          AND updated_at < NOW() - INTERVAL '2 hours'
+      `);
+    }
+  }
+}
+
+// Ensure the default admin exists, but do not overwrite user-managed profile fields.
+export async function ensureDefaultAdmin() {
   try {
-    const existingUsers = await db.select().from(users).limit(1);
-    if (existingUsers.length === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+    await ensureUsersSchemaCompatibility();
 
-      await db.insert(users).values({
-        username: 'admin',
-        password: hashedPassword,
-        name: 'Administrator',
-        email: 'admin@pinnacle.ai',
-        role: 'admin',
-        status: 'online',
-        gender: 'male',
-        mustChangePassword: false,
-        avatar: avatar('admin', 'male'),
-      });
+    const [existingAdmin] = await db
+      .select()
+      .from(users)
+      .where(
+        or(
+          eq(users.email, DEFAULT_ADMIN_EMAIL),
+          eq(users.username, DEFAULT_ADMIN_USERNAME),
+        ),
+      )
+      .limit(1);
 
-      console.log('✅ Default admin created: admin@pinnacle.ai / admin123');
+    const defaultAdminValues = await buildDefaultAdminValues();
+
+    if (!existingAdmin) {
+      await db.insert(users).values(defaultAdminValues);
+      console.log(`✅ Default admin created: ${DEFAULT_ADMIN_EMAIL} / ${DEFAULT_ADMIN_PASSWORD}`);
+      return;
+    }
+
+    // Normalize legacy seeded accounts that still use the old placeholder name.
+    if (
+      existingAdmin.name?.trim().toLowerCase() === 'administrator' &&
+      existingAdmin.email === DEFAULT_ADMIN_EMAIL &&
+      existingAdmin.username === DEFAULT_ADMIN_USERNAME
+    ) {
+      await db
+        .update(users)
+        .set({
+          name: DEFAULT_ADMIN_NAME,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existingAdmin.id));
+      console.log(`✅ Default admin name normalized to ${DEFAULT_ADMIN_NAME}`);
     }
   } catch (error: any) {
     if (!error.message?.includes('does not exist')) {
@@ -110,13 +376,10 @@ async function initializeDefaultAdmin() {
   }
 }
 
-// Run initialization
-initializeDefaultAdmin();
-
 export interface IStorage {
   // Auth
   authenticateUser(email: string, password: string): Promise<User | null>;
-  createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User>;
+  createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'lastActiveAt'> & { lastActiveAt?: Date | null }): Promise<User>;
   
   // Dashboard
   getDashboardStats(userId?: string): Promise<DashboardStats>;
@@ -125,6 +388,7 @@ export interface IStorage {
   getTeamMembers(): Promise<TeamMember[]>;
   getTeamMember(id: string): Promise<TeamMember | undefined>;
   updateTeamMember(id: string, updates: Partial<User>): Promise<TeamMember | null>;
+  recordUserPresence(id: string, status: TeamMember["status"], lastActiveAt?: Date): Promise<TeamMember | null>;
   deleteTeamMember(id: string): Promise<boolean>;
 
   // Projects
@@ -146,6 +410,8 @@ export interface IStorage {
   getTaskUpdates(taskId: string): Promise<TaskUpdate[]>;
   getAllTaskUpdates(): Promise<any[]>;
   createTaskUpdate(updateData: InsertTaskUpdate): Promise<TaskUpdate>;
+  getTaskUpdate(id: string): Promise<TaskUpdate | null>;
+  updateTaskUpdate(id: string, updates: Pick<TaskUpdate, "content">): Promise<TaskUpdate | null>;
 
   // Portfolios
   getPortfolios(): Promise<PortfolioWithDetails[]>;
@@ -201,6 +467,12 @@ export interface IStorage {
   createCalendarEvent(eventData: InsertCalendarEvent): Promise<CalendarEvent>;
   updateCalendarEvent(id: string, updates: Partial<CalendarEvent>, userId: string): Promise<CalendarEvent | null>;
   deleteCalendarEvent(id: string, userId: string): Promise<boolean>;
+
+  // Password Reset
+  createPasswordResetToken(userId: string, token: string, expiresAt: Date): Promise<void>;
+  getPasswordResetToken(token: string): Promise<any | null>;
+  markTokenAsUsed(token: string): Promise<void>;
+  getUserByEmail(email: string): Promise<User | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -235,7 +507,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+  async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'lastActiveAt'> & { lastActiveAt?: Date | null }): Promise<User> {
     const hashedPassword = await bcrypt.hash(userData.password, 10);
     const gender = userData.gender || 'male';
     const newUser = await db.insert(users).values({
@@ -243,6 +515,7 @@ export class DatabaseStorage implements IStorage {
       password: hashedPassword,
       avatar: userData.avatar || avatar(userData.name, gender),
       gender,
+      lastActiveAt: userData.lastActiveAt ?? new Date(),
     }).returning();
     return newUser[0];
   }
@@ -291,17 +564,8 @@ export class DatabaseStorage implements IStorage {
   async getTeamMembers(): Promise<TeamMember[]> {
     try {
       const allUsers = await db.select().from(users);
-      return allUsers.map((user: User) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        teamsUsername: user.teamsUsername || undefined,
-        avatar: user.avatar || avatar(user.name, user.gender || 'male'),
-        gender: user.gender,
-        role: user.role as "admin" | "manager" | "member",
-        status: user.status as "online" | "away" | "busy" | "offline",
-        workload: 0,
-      }));
+      const workloadMap = await buildTeamWorkloadMap();
+      return allUsers.map((user: User) => toTeamMember(user, workloadMap.get(user.id) ?? 0));
     } catch (error) {
       console.error('Team members error:', error);
       return [];
@@ -313,17 +577,8 @@ export class DatabaseStorage implements IStorage {
       const user = await db.select().from(users).where(eq(users.id, id)).limit(1);
       if (user.length === 0) return undefined;
       
-      return {
-        id: user[0].id,
-        name: user[0].name,
-        email: user[0].email,
-        teamsUsername: user[0].teamsUsername || undefined,
-        avatar: user[0].avatar || avatar(user[0].name, user[0].gender || 'male'),
-        gender: user[0].gender,
-        role: user[0].role as "admin" | "manager" | "member",
-        status: user[0].status as "online" | "away" | "busy" | "offline",
-        workload: 0,
-      };
+      const workloadMap = await buildTeamWorkloadMap();
+      return toTeamMember(user[0], workloadMap.get(user[0].id) ?? 0);
     } catch (error) {
       console.error('Team member error:', error);
       return undefined;
@@ -343,20 +598,31 @@ export class DatabaseStorage implements IStorage {
         
       if (updated.length === 0) return null;
       
-      const user = updated[0];
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        teamsUsername: user.teamsUsername || undefined,
-        avatar: user.avatar || avatar(user.name, user.gender || 'male'),
-        gender: user.gender,
-        role: user.role as "admin" | "manager" | "member",
-        status: user.status as "online" | "away" | "busy" | "offline",
-        workload: 0,
-      };
+      const workloadMap = await buildTeamWorkloadMap();
+      return toTeamMember(updated[0], workloadMap.get(updated[0].id) ?? 0);
     } catch (error) {
       console.error('Update team member error:', error);
+      return null;
+    }
+  }
+
+  async recordUserPresence(id: string, status: TeamMember["status"], lastActiveAt: Date = new Date()): Promise<TeamMember | null> {
+    try {
+      const updated = await db.update(users)
+        .set({
+          status,
+          lastActiveAt,
+        })
+        .where(eq(users.id, id))
+        .returning();
+
+      if (updated.length === 0) {
+        return null;
+      }
+
+      return toTeamMember(updated[0]);
+    } catch (error) {
+      console.error('Record user presence error:', error);
       return null;
     }
   }
@@ -425,6 +691,7 @@ export class DatabaseStorage implements IStorage {
           
           return {
             ...project,
+            progress: calculateProjectProgress(projectTasks, project.progress),
             ownerName: owner?.name || 'Unknown',
             ownerAvatar: owner?.avatar || avatar(owner?.name || 'Unknown'),
             taskCount: projectTasks.length,
@@ -477,6 +744,7 @@ export class DatabaseStorage implements IStorage {
       
       return {
         ...project,
+        progress: calculateProjectProgress(projectTasks, project.progress),
         ownerName: owner?.name || 'Unknown',
         ownerAvatar: owner?.avatar || avatar(owner?.name || 'Unknown'),
         taskCount: projectTasks.length,
@@ -905,6 +1173,29 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Create task update error:', error);
       throw error;
+    }
+  }
+
+  async getTaskUpdate(id: string): Promise<TaskUpdate | null> {
+    try {
+      const result = await db.select().from(taskUpdates).where(eq(taskUpdates.id, id)).limit(1);
+      return result[0] ?? null;
+    } catch (error) {
+      console.error('Get task update error:', error);
+      return null;
+    }
+  }
+
+  async updateTaskUpdate(id: string, updates: Pick<TaskUpdate, "content">): Promise<TaskUpdate | null> {
+    try {
+      const result = await db.update(taskUpdates)
+        .set({ ...updates })
+        .where(eq(taskUpdates.id, id))
+        .returning();
+      return result[0] ?? null;
+    } catch (error) {
+      console.error('Update task update error:', error);
+      return null;
     }
   }
 
@@ -1472,6 +1763,72 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Delete calendar event error:', error);
       return false;
+    }
+  }
+
+  // Password Reset methods
+  async createPasswordResetToken(userId: string, token: string, expiresAt: Date): Promise<void> {
+    try {
+      await db.insert(passwordResetTokens).values({
+        userId,
+        token,
+        expiresAt,
+        used: false,
+      });
+    } catch (error) {
+      console.error('Create password reset token error:', error);
+      throw error;
+    }
+  }
+
+  async getPasswordResetToken(token: string): Promise<any | null> {
+    try {
+      const result = await db
+        .select({
+          id: passwordResetTokens.id,
+          userId: passwordResetTokens.userId,
+          token: passwordResetTokens.token,
+          expiresAt: passwordResetTokens.expiresAt,
+          used: passwordResetTokens.used,
+          userEmail: users.email,
+          userName: users.name,
+        })
+        .from(passwordResetTokens)
+        .leftJoin(users, eq(passwordResetTokens.userId, users.id))
+        .where(eq(passwordResetTokens.token, token))
+        .limit(1);
+
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      console.error('Get password reset token error:', error);
+      return null;
+    }
+  }
+
+  async markTokenAsUsed(token: string): Promise<void> {
+    try {
+      await db
+        .update(passwordResetTokens)
+        .set({ used: true })
+        .where(eq(passwordResetTokens.token, token));
+    } catch (error) {
+      console.error('Mark token as used error:', error);
+      throw error;
+    }
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      console.error('Get user by email error:', error);
+      return null;
     }
   }
 }

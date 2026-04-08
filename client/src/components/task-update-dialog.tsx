@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Calendar, MessageSquare, History } from "lucide-react";
+import { Calendar, MessageSquare, History, Pencil, X, Check } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Task, TaskUpdate } from "@shared/schema";
 import { format } from "date-fns";
@@ -34,6 +34,8 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
   const isAdminViewOnly = user?.role === "admin";
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
 
   const { data: updates, isLoading: isLoadingUpdates } = useQuery<TaskUpdate[]>({
     queryKey: [`/api/tasks/${task.id}/updates`],
@@ -70,6 +72,29 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
     },
   });
 
+  const editUpdateMutation = useMutation({
+    mutationFn: async ({ updateId, content }: { updateId: string; content: string }) => {
+      const res = await apiRequest("PUT", `/api/tasks/${task.id}/updates/${updateId}`, { content });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${task.id}/updates`] });
+      toast({
+        title: "Update edited",
+        description: "Your update has been edited successfully.",
+      });
+      setEditingUpdateId(null);
+      setEditContent("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to edit update",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isAdminViewOnly) return;
@@ -79,6 +104,21 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
       payload.progress = progress;
     }
     updateMutation.mutate(payload);
+  };
+
+  const handleEditUpdate = (update: TaskUpdate) => {
+    setEditingUpdateId(update.id);
+    setEditContent(update.content);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editContent.trim() || !editingUpdateId) return;
+    editUpdateMutation.mutate({ updateId: editingUpdateId, content: editContent });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUpdateId(null);
+    setEditContent("");
   };
 
   return (
@@ -149,14 +189,54 @@ export function TaskUpdateDialog({ task, trigger }: TaskUpdateDialogProps) {
                             ? `${update.progress}% Complete`
                             : "Progress unchanged"}
                         </span>
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {update.createdAt ? format(new Date(update.createdAt), "MMM d, h:mm a") : "Just now"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {update.createdAt ? format(new Date(update.createdAt), "MMM d, h:mm a") : "Just now"}
+                          </span>
+                          {!isAdminViewOnly && update.userId === user?.id && editingUpdateId !== update.id && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={() => handleEditUpdate(update)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-muted-foreground leading-relaxed">
-                        {update.content}
-                      </p>
+                      {editingUpdateId === update.id ? (
+                        <div className="space-y-2">
+                          <Textarea
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            className="min-h-[60px]"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={handleSaveEdit}
+                              disabled={editUpdateMutation.isPending || !editContent.trim()}
+                            >
+                              <Check className="h-3 w-3 mr-1" />
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEdit}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground leading-relaxed">
+                          {update.content}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

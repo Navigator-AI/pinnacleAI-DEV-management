@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import type { TeamMember } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,41 +18,72 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar?: string;
+  gender?: string;
+  teamsUsername?: string | null;
+  mustChangePassword?: boolean;
+  teamsNotificationEnabled?: boolean;
+};
+
+const readStoredUser = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem('user') || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const buildAvatarUrl = (seed: string, gender: 'male' | 'female') => {
+  const style = gender === 'female' ? 'lorelei' : 'adventurer';
+  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(seed)}`;
+};
+
+const maleAvatarSeeds = [
+  'John',
+  'Mike',
+  'David',
+  'James',
+  'Robert',
+  'William',
+  'Richard',
+  'Thomas',
+];
+
+const femaleAvatarSeeds = [
+  'Emma',
+  'Olivia',
+  'Sophia',
+  'Isabella',
+  'Mia',
+  'Charlotte',
+  'Amelia',
+  'Harper',
+];
+
 export default function ProfilePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+  const { data: authData } = useQuery<{ user: AuthUser }>({
+    queryKey: ["/api/auth/me"],
+  });
+  const user = authData?.user || readStoredUser();
   const [showAvatarDialog, setShowAvatarDialog] = useState(false);
   const [selectedGender, setSelectedGender] = useState<'male' | 'female'>('male');
   const [selectedAvatar, setSelectedAvatar] = useState('');
   
   // Fetch full user data
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<TeamMember>({
     queryKey: [`/api/users/${user.id}`],
     enabled: Boolean(user?.id),
   });
 
-  const maleAvatars = [
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=John&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=David&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=James&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Robert&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=William&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Richard&gender=male',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Thomas&gender=male',
-  ];
-  
-  const femaleAvatars = [
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Emma&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Olivia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Isabella&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Mia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlotte&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Amelia&gender=female',
-    'https://api.dicebear.com/7.x/avataaars/svg?seed=Harper&gender=female',
-  ];
+  const maleAvatars = maleAvatarSeeds.map((seed) => buildAvatarUrl(seed, 'male'));
+  const femaleAvatars = femaleAvatarSeeds.map((seed) => buildAvatarUrl(seed, 'female'));
   
   const [formData, setFormData] = useState({
     name: user.name || '',
@@ -61,6 +93,19 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: ''
   });
+
+  useEffect(() => {
+    setFormData((current) => ({
+      ...current,
+      name: user.name || '',
+      email: user.email || '',
+      role: user.role || '',
+    }));
+  }, [user?.id, user?.name, user?.email, user?.role]);
+
+  useEffect(() => {
+    setSelectedGender((userData?.gender || user?.gender || 'male') as 'male' | 'female');
+  }, [userData?.gender, user?.gender]);
 
   const updateAvatarMutation = useMutation({
     mutationFn: async (data: { avatar: string; gender: string }) => {
@@ -73,18 +118,22 @@ export default function ProfilePage() {
       return response.json();
     },
     onSuccess: (updatedUser) => {
-      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
-      const newUser = { ...currentUser, avatar: updatedUser.avatar };
+      const currentUser = authData?.user || readStoredUser();
+      const newUser = {
+        ...currentUser,
+        avatar: updatedUser.avatar,
+        gender: updatedUser.gender ?? selectedGender,
+      };
       sessionStorage.setItem('user', JSON.stringify(newUser));
+      queryClient.setQueryData(["/api/auth/me"], { user: newUser });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/team'] });
+      window.dispatchEvent(new Event('user-updated'));
       setShowAvatarDialog(false);
       toast({
         title: "Avatar Updated",
         description: "Your avatar has been updated successfully.",
       });
-      // Refresh page to show new avatar
-      setTimeout(() => window.location.reload(), 500);
     },
   });
 
@@ -106,11 +155,13 @@ export default function ProfilePage() {
     },
     onSuccess: (updatedUser) => {
       // Update sessionStorage with new user data
-      const currentUser = JSON.parse(sessionStorage.getItem('user') || '{}');
+      const currentUser = authData?.user || readStoredUser();
       const newUser = { ...currentUser, ...updatedUser };
       sessionStorage.setItem('user', JSON.stringify(newUser));
+      queryClient.setQueryData(["/api/auth/me"], { user: newUser });
       
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${user.id}`] });
+      window.dispatchEvent(new Event('user-updated'));
       toast({
         title: "Profile Updated",
         description: "Your profile has been updated successfully.",
@@ -150,6 +201,13 @@ export default function ProfilePage() {
       });
     },
   });
+
+  const openAvatarDialog = () => {
+    const nextGender = (userData?.gender || user?.gender || 'male') as 'male' | 'female';
+    setSelectedGender(nextGender);
+    setSelectedAvatar(userData?.avatar || user?.avatar || buildAvatarUrl(user?.name || 'User', nextGender));
+    setShowAvatarDialog(true);
+  };
 
   const handleSave = () => {
     updateProfileMutation.mutate({
@@ -205,13 +263,15 @@ export default function ProfilePage() {
             <CardContent className="space-y-6">
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={userData?.avatar || user.avatar} />
+                  <AvatarImage
+                    src={userData?.avatar || user.avatar || buildAvatarUrl(user.name || 'User', (userData?.gender || user?.gender || 'male') as 'male' | 'female')}
+                  />
                   <AvatarFallback className="text-lg">
                     {user.name?.split(' ').map((n: string) => n[0]).join('')}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <Button variant="outline" size="sm" onClick={() => setShowAvatarDialog(true)}>
+                  <Button variant="outline" size="sm" onClick={openAvatarDialog}>
                     Change Avatar
                   </Button>
                   <p className="text-xs text-muted-foreground mt-1">

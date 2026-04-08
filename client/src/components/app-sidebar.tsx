@@ -38,14 +38,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import type { Project, Task, IssueTable } from "@shared/schema";
+import type { IssueTable, Project, Task, TeamMember } from "@shared/schema";
 
-export function AppSidebar({ user }: { user: { id: string; name: string; email: string; role: string; avatar?: string } }) {
+export function AppSidebar({
+  user,
+  onLogout,
+}: {
+  user: { id: string; name: string; email: string; role: string; avatar?: string };
+  onLogout: () => void | Promise<void>;
+}) {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
 
   // Fetch full user data to get avatar
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<TeamMember>({
     queryKey: [`/api/users/${user.id}`],
     enabled: Boolean(user?.id),
   });
@@ -77,11 +83,6 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
 
   const handleSettingsClick = () => {
     setLocation('/settings');
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('user');
-    window.location.href = '/login';
   };
 
   // Navigation items based on role hierarchy
@@ -162,11 +163,11 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border p-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 via-sky-500 to-indigo-500 text-white shadow-lg">
             <span className="text-xs font-bold">AI</span>
           </div>
           <span className="text-sm font-semibold text-foreground">
-            SierraEdge AI
+            Pinnacle AI
           </span>
         </Link>
       </SidebarHeader>
@@ -179,7 +180,7 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
       <SidebarFooter className="border-t border-sidebar-border p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <div className="flex items-center gap-3 rounded-md p-2 hover-elevate cursor-pointer">
+            <div className="flex items-center gap-3 rounded-xl p-2 hover-elevate cursor-pointer">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={userData?.avatar || user.avatar} />
                 <AvatarFallback>{user.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
@@ -213,7 +214,7 @@ export function AppSidebar({ user }: { user: { id: string; name: string; email: 
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
+            <DropdownMenuItem onClick={() => { void onLogout(); }}>
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

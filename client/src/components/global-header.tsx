@@ -22,6 +22,7 @@ import { useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { TeamMember } from "@shared/schema";
 
 interface GlobalHeaderProps {
   title?: string;
@@ -31,6 +32,8 @@ interface GlobalHeaderProps {
     name: string;
     email: string;
     role: string;
+    avatar?: string;
+    gender?: string;
   };
   onLogout: () => void;
 }
@@ -40,6 +43,10 @@ export function GlobalHeader({ title, subtitle, user, onLogout }: GlobalHeaderPr
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: userData } = useQuery<TeamMember>({
+    queryKey: [`/api/users/${user.id}`],
+    enabled: Boolean(user?.id),
+  });
 
   // Fetch notifications from API
   const { data: notifications = [] } = useQuery({
@@ -122,8 +129,10 @@ export function GlobalHeader({ title, subtitle, user, onLogout }: GlobalHeaderPr
       description: `Switching to ${product}`,
     });
   };
+  const avatarGender = (userData?.gender || user.gender || "male") as "male" | "female";
+  const fallbackAvatar = `https://api.dicebear.com/7.x/${avatarGender === "female" ? "lorelei" : "adventurer"}/svg?seed=${encodeURIComponent(user.name || "User")}`;
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border/70 bg-background/80 px-5 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
       <div className="flex items-center gap-4">
         <SidebarTrigger data-testid="button-sidebar-toggle" />
 
@@ -274,7 +283,7 @@ export function GlobalHeader({ title, subtitle, user, onLogout }: GlobalHeaderPr
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} />
+                <AvatarImage src={userData?.avatar || user.avatar || fallbackAvatar} />
                 <AvatarFallback>{user.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
               </Avatar>
             </Button>

@@ -15,7 +15,9 @@ export const users = pgTable("users", {
   gender: text("gender").default("male"),
   role: text("role").notNull().default("member"),
   status: text("status").notNull().default("online"),
+  lastActiveAt: timestamp("last_active_at").defaultNow(),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  teamsNotificationEnabled: boolean("teams_notification_enabled").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -238,6 +240,8 @@ export interface TeamMember {
   teamsUsername?: string;
   avatar?: string;
   gender?: string;
+  teamsNotificationEnabled?: boolean;
+  lastActiveAt?: string | Date | null;
   role: "admin" | "manager" | "member";
   status: "online" | "away" | "busy" | "offline";
   workload: number; // 0-100 percentage
@@ -381,9 +385,26 @@ export const calendarEvents = pgTable("calendar_events", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertCalendarEventSchema = createInsertSchema(calendarEvents);
+// Password Reset Tokens table
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).extend({
+  startTime: z.coerce.date(),
+  endTime: z.coerce.date(),
+});
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens);
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 
 // API Response types
 export interface ApiResponse<T> {
